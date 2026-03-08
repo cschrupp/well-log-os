@@ -101,6 +101,10 @@ uv run examples/real_data_demo.py examples/cbl_main.log.yaml
 
 Use [examples/cbl_main.log.yaml](examples/cbl_main.log.yaml) as the base file your future UI can load/save.
 Each track in that file has its own `configure` section under `auto_tracks.tracks`.
+Keep local input/output assets under:
+- `workspace/data/` for LAS/DLIS
+- `workspace/renders/` for generated PDF/HTML/JSON outputs
+The entire `workspace/` folder is excluded from git.
 Note: LAS ingestion is implemented; DLIS normalization is still scaffolded.
 
 ## Project Memory

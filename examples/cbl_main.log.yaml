@@ -1,11 +1,11 @@
 version: 1
 name: CBL Main Configuration
 data:
-  source_path: ../CBL_Main_REV1.las
+  source_path: ../workspace/data/CBL_Main_REV1.las
   source_format: auto
 render:
   backend: matplotlib
-  output_path: ../CBL_Main_REV1_render.pdf
+  output_path: ../workspace/renders/CBL_Main_REV1_render.pdf
   dpi: 300
 document:
   name: "{WELL} Auto Layout"

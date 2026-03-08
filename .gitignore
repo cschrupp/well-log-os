@@ -6,19 +6,12 @@ __pycache__/
 uv.lock.bak
 
 # Generated outputs
-*.pdf
-*.Pdf
-*_render.pdf
-synthetic_triple_combo.pdf
+workspace/
 
 # Build artifacts
 build/
 dist/
 *.egg-info/
-
-# Raw well data (keep local; do not version by default)
-*.las
-*.dlis
 
 # Windows ADS metadata files copied from NTFS
 *:Zone.Identifier
