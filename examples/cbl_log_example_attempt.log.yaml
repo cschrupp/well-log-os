@@ -16,7 +16,8 @@ auto_tracks:
   tracks:
     - channel: GR_STGC
       configure:
-        id: gr_stgc
+        id: combo_gr_tt
+        title: GR_STGC / TT
         curve_render_mode: value_labels
         value_labels:
           step: 10
@@ -28,7 +29,7 @@ auto_tracks:
           color: "#2e7d32"
     - channel: TT
       configure:
-        id: tt
+        id: combo_gr_tt
         style:
           color: "#1e40af"
     - channel: CBL

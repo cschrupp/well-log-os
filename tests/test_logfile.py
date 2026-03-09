@@ -239,6 +239,26 @@ class LogFileTests(unittest.TestCase):
         self.assertEqual(curve.render_mode, "value_labels")
         self.assertEqual(curve.value_labels.step, 5.0)
 
+    def test_auto_tracks_can_group_multiple_curves_in_one_track(self) -> None:
+        payload = build_mapping()
+        payload["auto_tracks"]["tracks"][0]["configure"]["id"] = "combo"
+        payload["auto_tracks"]["tracks"][0]["configure"]["title"] = "GR / RT"
+        payload["auto_tracks"]["tracks"][1]["configure"]["id"] = "combo"
+        payload["auto_tracks"]["tracks"][1]["configure"]["style"]["color"] = "#0d47a1"
+        spec = logfile_from_mapping(payload)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("example_input.las"),
+        )
+        self.assertEqual(len(document.tracks), 2)  # depth + grouped combo
+        combo = document.tracks[1]
+        self.assertEqual(combo.id, "combo")
+        self.assertEqual(combo.title, "GR / RT")
+        self.assertEqual(len(combo.elements), 2)
+        self.assertEqual(combo.elements[0].channel, "GR")
+        self.assertEqual(combo.elements[1].channel, "RT")
+
     def test_page_spacing_fields_are_supported_in_logfile_yaml(self) -> None:
         payload = build_mapping()
         payload["document"]["page"]["margin_left_mm"] = 2.5

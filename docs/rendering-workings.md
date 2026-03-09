@@ -133,3 +133,13 @@ A `reference` track is not only visual: it can define the layout reference axis.
   - `reference.header.display_unit`
   - `reference.header.display_scale`
   - `reference.header.display_annotations`
+
+## 9) Multi-Curve Auto Tracks
+
+`auto_tracks` can build multi-curve tracks by reusing the same `configure.id` across entries.
+Those entries are grouped into one normal track and rendered with multiple curve elements.
+
+Track-header legend space auto-fits to curve count:
+
+- legend slot line units are expanded to at least the number of curves
+- page `track_header_height_mm` is increased when needed to preserve readable legend rows

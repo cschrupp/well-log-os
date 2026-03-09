@@ -227,6 +227,46 @@ class MatplotlibRenderer(Renderer):
         if draw_minor and minor_step > 0:
             _draw_ticks_for_step(minor_step, minor_len)
 
+    def _curve_count(self, track) -> int:
+        return sum(1 for element in track.elements if isinstance(element, CurveElement))
+
+    def _effective_header_line_units(self, track, header_item) -> int:
+        if (
+            header_item.kind == TrackHeaderObjectKind.LEGEND
+            and header_item.enabled
+            and header_item.reserve_space
+        ):
+            return max(header_item.line_units, self._curve_count(track))
+        return header_item.line_units
+
+    def _auto_adjust_track_header_height(self, document: LogDocument) -> LogDocument:
+        base_height = document.page.track_header_height_mm
+        if base_height <= 0:
+            return document
+
+        required_height = float(base_height)
+        for track in document.tracks:
+            reserved = track.header.reserved_objects()
+            if not reserved:
+                continue
+            configured_units = sum(item.line_units for item in reserved)
+            if configured_units <= 0:
+                continue
+            effective_units = sum(
+                self._effective_header_line_units(track, item) for item in reserved
+            )
+            required_height = max(
+                required_height,
+                base_height * (effective_units / configured_units),
+            )
+
+        if required_height <= base_height + 1e-9:
+            return document
+        return replace(
+            document,
+            page=replace(document.page, track_header_height_mm=required_height),
+        )
+
     def _build_continuous_strip_document(self, document: LogDocument) -> LogDocument:
         if self.continuous_strip_page_height_mm is None:
             return document
@@ -285,6 +325,7 @@ class MatplotlibRenderer(Renderer):
             draw_header = False
             draw_footer = False
 
+        render_document = self._auto_adjust_track_header_height(render_document)
         layouts = self.layout_engine.layout(render_document, dataset)
         figures = []
 
@@ -458,11 +499,11 @@ class MatplotlibRenderer(Renderer):
         top = float(self._style_value("track_header", "slot_top"))
         bottom = float(self._style_value("track_header", "slot_bottom"))
         span = top - bottom
-        total_units = sum(item.line_units for item in reserved)
+        total_units = sum(self._effective_header_line_units(track, item) for item in reserved)
         cursor = top
         slots = []
         for item in reserved:
-            item_height = span * (item.line_units / total_units)
+            item_height = span * (self._effective_header_line_units(track, item) / total_units)
             slot_top = cursor
             slot_bottom = cursor - item_height
             slots.append((item, slot_top, slot_bottom))

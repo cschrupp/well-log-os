@@ -95,10 +95,12 @@ Behavior:
 - Savefile values override template values.
 - `auto_tracks.tracks` uses channel-aware merging (match by `channel`).
 - Track entries can be short (`- GR`) when `auto_tracks.default_configure` is defined.
+- `auto_tracks` can group multiple curves in one track by reusing the same `configure.id`.
 - Template YAML files can be partial; the merged savefile result is what gets validated and rendered.
 - Page spacing is YAML-configurable:
   - `document.page.margin_left_mm` (default: `0`)
   - `document.page.track_gap_mm` (default: `0`)
+- Track-header legend space now auto-expands based on curve count in each track.
 - For continuous logs in PDF viewers, set `render.continuous_strip_page_height_mm` to export
   depth-continuous strip segments without vertical blank gaps while keeping readability.
 - Matplotlib visuals can be configured in YAML using `render.matplotlib.style` instead of

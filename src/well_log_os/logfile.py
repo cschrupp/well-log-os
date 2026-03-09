@@ -540,6 +540,8 @@ def _build_tracks(dataset: WellDataset, auto_tracks: dict[str, Any]) -> list[dic
         )
     )
 
+    grouped_tracks: dict[str, dict[str, Any]] = {}
+    grouped_meta: dict[str, dict[str, Any]] = {}
     added = 0
     for index, item in enumerate(track_items, start=1):
         track_item = _ensure_mapping(item, context=f"auto_tracks.tracks[{index - 1}]")
@@ -582,38 +584,62 @@ def _build_tracks(dataset: WellDataset, auto_tracks: dict[str, Any]) -> list[dic
             title = _safe_format(title_template, format_values).strip()
         default_id = f"{_sanitize_id(channel.mnemonic) or 'curve'}_{index}"
         track_id = str(configure.get("id", default_id))
+        position = int(configure["position"]) if "position" in configure else None
 
-        positioned_tracks.append(
-            (
-                int(configure["position"]) if "position" in configure else None,
-                index,
-                {
-                    "id": track_id,
-                    "title": title or channel.mnemonic,
-                    "kind": "normal",
-                    "width_mm": width_mm,
-                    "track_header": header,
-                    "grid": grid,
-                    "x_scale": _build_scale(channel.masked_values(), configure.get("scale")),
-                    "elements": [
-                        {
-                            "kind": "curve",
-                            "channel": channel.mnemonic,
-                            "label": channel.mnemonic,
-                            "style": style,
-                            "render_mode": str(configure.get("curve_render_mode", "line")),
-                            "value_labels": value_labels,
-                        }
-                    ],
-                },
-            )
-        )
-        added += 1
+        curve_element = {
+            "kind": "curve",
+            "channel": channel.mnemonic,
+            "label": channel.mnemonic,
+            "style": style,
+            "render_mode": str(configure.get("curve_render_mode", "line")),
+            "value_labels": value_labels,
+        }
+
+        if track_id in grouped_tracks:
+            grouped_track = grouped_tracks[track_id]
+            grouped_track["elements"].append(curve_element)
+
+            existing_width = float(grouped_track["width_mm"])
+            if not np.isclose(existing_width, width_mm):
+                raise TemplateValidationError(
+                    "Track entries grouped under the same configure.id must share width_mm."
+                )
+
+            existing_position = grouped_meta[track_id]["position"]
+            if position is not None and existing_position is None:
+                grouped_meta[track_id]["position"] = position
+            elif (
+                position is not None
+                and existing_position is not None
+                and int(existing_position) != position
+            ):
+                raise TemplateValidationError(
+                    "Track entries grouped under the same configure.id must share position."
+                )
+            continue
+
         if added >= max_tracks:
-            break
+            continue
+
+        grouped_tracks[track_id] = {
+            "id": track_id,
+            "title": title or channel.mnemonic,
+            "kind": "normal",
+            "width_mm": width_mm,
+            "track_header": header,
+            "grid": grid,
+            "x_scale": _build_scale(channel.masked_values(), configure.get("scale")),
+            "elements": [curve_element],
+        }
+        grouped_meta[track_id] = {"position": position, "order": index}
+        added += 1
 
     if added == 0:
         raise TemplateValidationError("No configured tracks were added from auto_tracks.tracks.")
+
+    for track_id, grouped_track in grouped_tracks.items():
+        meta = grouped_meta[track_id]
+        positioned_tracks.append((meta["position"], int(meta["order"]), grouped_track))
 
     track_count = len(positioned_tracks)
     ordered: list[dict[str, Any] | None] = [None] * track_count
