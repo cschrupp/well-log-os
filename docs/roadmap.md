@@ -51,6 +51,7 @@ Implementable now (already in project):
 - Multi-curve track overlays with independent per-curve scaling.
 - Per-curve header rows (name + scale/limits + unit).
 - Per-curve header display toggles (`show_name`, `show_unit`, `show_limits`, `show_color`).
+- Optional header `divisions` object for per-track scale ticks in a dedicated header line.
 - Value-label mode with step, number format, precision, alignment, font.
 - Header typography and frame styling through `render.matplotlib.style`.
 

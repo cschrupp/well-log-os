@@ -505,6 +505,8 @@ class MatplotlibRenderer(Renderer):
                 self._draw_track_header_scale(ax, track, document, dataset, slot_top, slot_bottom)
             elif item.kind == TrackHeaderObjectKind.LEGEND:
                 self._draw_track_header_legend(ax, track, slot_top, slot_bottom)
+            elif item.kind == TrackHeaderObjectKind.DIVISIONS:
+                self._draw_track_header_divisions(ax, track, dataset, slot_top, slot_bottom)
 
     def _curve_header_pair_slot(self, track, slots) -> tuple[int, int, float, float] | None:
         if self._curve_count(track) <= 0:
@@ -779,6 +781,125 @@ class MatplotlibRenderer(Renderer):
             return 0.7
         return max(0.7, element.style.line_width)
 
+    def _header_division_scale(
+        self, track, dataset: WellDataset
+    ) -> tuple[float, float, ScaleKind] | None:
+        if self._uses_independent_curve_scales(track):
+            return None
+
+        scale = track.x_scale
+        if scale is not None:
+            left = scale.maximum if scale.reverse else scale.minimum
+            right = scale.minimum if scale.reverse else scale.maximum
+            return left, right, scale.kind
+
+        for element in self._curve_elements(track):
+            if element.scale is not None:
+                left = element.scale.maximum if element.scale.reverse else element.scale.minimum
+                right = element.scale.minimum if element.scale.reverse else element.scale.maximum
+                return left, right, element.scale.kind
+
+            channel = dataset.get_channel(element.channel)
+            if isinstance(channel, ScalarChannel):
+                values = channel.masked_values()
+                finite = values[np.isfinite(values)]
+                if finite.size >= 2:
+                    return float(np.nanmin(finite)), float(np.nanmax(finite)), ScaleKind.LINEAR
+        return None
+
+    def _draw_track_header_divisions(
+        self,
+        ax,
+        track,
+        dataset: WellDataset,
+        slot_top: float,
+        slot_bottom: float,
+    ) -> None:
+        track_header_style = self._style_section("track_header")
+        division_scale = self._header_division_scale(track, dataset)
+        if division_scale is None:
+            fontsize = self._slot_font_size(
+                ax,
+                slot_top,
+                slot_bottom,
+                min_pt=float(track_header_style["scale_min_pt"]),
+                max_pt=float(track_header_style["scale_max_pt"]),
+            )
+            ax.text(
+                float(track_header_style["text_x"]),
+                0.5 * (slot_top + slot_bottom),
+                "-",
+                transform=ax.transAxes,
+                ha="left",
+                va="center",
+                fontsize=fontsize,
+                clip_on=True,
+            )
+            return
+
+        left, right, scale_kind = division_scale
+        if np.isclose(left, right):
+            return
+
+        tick_count = int(track_header_style.get("division_tick_count", 5))
+        tick_count = max(2, tick_count)
+        if scale_kind == ScaleKind.LOG:
+            if left <= 0 or right <= 0:
+                return
+            tick_values = np.geomspace(left, right, tick_count)
+        else:
+            tick_values = np.linspace(left, right, tick_count)
+
+        left_x = float(track_header_style["scale_left_x"])
+        right_x = float(track_header_style["scale_right_x"])
+        tick_x = np.linspace(left_x, right_x, tick_count)
+
+        slot_height = slot_top - slot_bottom
+        axis_y = slot_bottom + slot_height * float(track_header_style["division_axis_y_ratio"])
+        label_y = slot_bottom + slot_height * float(track_header_style["division_label_y_ratio"])
+        tick_half = 0.5 * slot_height * float(track_header_style["division_tick_length_ratio"])
+        tick_color = str(track_header_style["division_tick_color"])
+        tick_linewidth = float(track_header_style["division_tick_linewidth"])
+        label_fontsize = self._slot_font_size(
+            ax,
+            slot_top,
+            slot_bottom,
+            min_pt=float(track_header_style["scale_min_pt"]),
+            max_pt=float(track_header_style["scale_max_pt"]),
+        )
+
+        ax.plot(
+            [left_x, right_x],
+            [axis_y, axis_y],
+            transform=ax.transAxes,
+            color=tick_color,
+            linewidth=tick_linewidth,
+        )
+        for index, (x, value) in enumerate(zip(tick_x, tick_values, strict=False)):
+            ax.plot(
+                [x, x],
+                [axis_y - tick_half, axis_y + tick_half],
+                transform=ax.transAxes,
+                color=tick_color,
+                linewidth=tick_linewidth,
+            )
+            align = "center"
+            if index == 0:
+                align = "left"
+            elif index == tick_count - 1:
+                align = "right"
+            ax.text(
+                x,
+                label_y,
+                self._format_number(float(value), NumberFormatKind.AUTOMATIC, 2),
+                transform=ax.transAxes,
+                ha=align,
+                va="center",
+                fontsize=label_fontsize,
+                color=tick_color,
+                clip_on=True,
+            )
+
     def _draw_track_header_legend(self, ax, track, slot_top: float, slot_bottom: float) -> None:
         track_header_style = self._style_section("track_header")
         curves = self._curve_elements(track)
@@ -1037,8 +1158,14 @@ class MatplotlibRenderer(Renderer):
                     alpha=track.grid.minor_alpha,
                     linewidth=float(grid_style["x_minor_linewidth"]),
                 )
-                ax.tick_params(axis="x", labelsize=float(track_style["x_tick_labelsize"]))
-                ax.xaxis.tick_top()
+                ax.tick_params(
+                    axis="x",
+                    which="both",
+                    top=False,
+                    bottom=False,
+                    labeltop=False,
+                    labelbottom=False,
+                )
             else:
                 ax.set_xlim(0, 1)
                 ax.set_xticks([])
@@ -1094,10 +1221,23 @@ class MatplotlibRenderer(Renderer):
             linewidth=float(grid_style["x_minor_linewidth"]),
         )
         if independent_curve_scales:
-            ax.tick_params(axis="x", which="both", top=False, bottom=False, labeltop=False)
+            ax.tick_params(
+                axis="x",
+                which="both",
+                top=False,
+                bottom=False,
+                labeltop=False,
+                labelbottom=False,
+            )
         else:
-            ax.tick_params(axis="x", labelsize=float(track_style["x_tick_labelsize"]))
-            ax.xaxis.tick_top()
+            ax.tick_params(
+                axis="x",
+                which="both",
+                top=False,
+                bottom=False,
+                labeltop=False,
+                labelbottom=False,
+            )
         ax.tick_params(axis="y", length=0, labelleft=False)
 
     def _uses_independent_curve_scales(self, track) -> bool:

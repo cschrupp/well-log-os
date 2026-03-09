@@ -36,6 +36,7 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
         self.assertEqual(renderer.style["track"]["reference_label_align"], "center")
         self.assertEqual(renderer.style["track"]["reference_label_x"], 0.5)
         self.assertEqual(renderer.style["track_header"]["paired_scale_text_offset_ratio"], 0.08)
+        self.assertEqual(renderer.style["track_header"]["division_tick_count"], 5)
 
     def test_renderer_style_override_deep_merges(self) -> None:
         renderer = MatplotlibRenderer(

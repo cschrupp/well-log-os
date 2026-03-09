@@ -231,6 +231,12 @@ class TemplateTests(unittest.TestCase):
                                 {"kind": "title", "enabled": True, "line_units": 1},
                                 {"kind": "scale", "enabled": False, "reserve_space": True},
                                 {"kind": "legend", "enabled": True, "line_units": 2},
+                                {
+                                    "kind": "divisions",
+                                    "enabled": True,
+                                    "reserve_space": True,
+                                    "line_units": 1,
+                                },
                             ]
                         },
                         "elements": [{"kind": "curve", "channel": "GR"}],
@@ -239,12 +245,13 @@ class TemplateTests(unittest.TestCase):
             }
         )
         objects = document.tracks[0].header.objects
-        self.assertEqual(len(objects), 3)
+        self.assertEqual(len(objects), 4)
         self.assertEqual(objects[0].kind, TrackHeaderObjectKind.TITLE)
         self.assertEqual(objects[1].kind, TrackHeaderObjectKind.SCALE)
         self.assertFalse(objects[1].enabled)
         self.assertTrue(objects[1].reserve_space)
         self.assertEqual(objects[2].line_units, 2)
+        self.assertEqual(objects[3].kind, TrackHeaderObjectKind.DIVISIONS)
 
     def test_invalid_track_header_configuration_raises_template_error(self) -> None:
         with self.assertRaises(TemplateValidationError):

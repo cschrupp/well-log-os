@@ -29,6 +29,7 @@ class TrackHeaderObjectKind(StrEnum):
     TITLE = "title"
     SCALE = "scale"
     LEGEND = "legend"
+    DIVISIONS = "divisions"
 
 
 class ReferenceAxisKind(StrEnum):
@@ -127,6 +128,12 @@ def _default_track_header_objects() -> tuple[TrackHeaderObjectSpec, ...]:
         TrackHeaderObjectSpec(kind=TrackHeaderObjectKind.TITLE, line_units=1),
         TrackHeaderObjectSpec(kind=TrackHeaderObjectKind.SCALE, line_units=1),
         TrackHeaderObjectSpec(kind=TrackHeaderObjectKind.LEGEND, line_units=2),
+        TrackHeaderObjectSpec(
+            kind=TrackHeaderObjectKind.DIVISIONS,
+            enabled=False,
+            reserve_space=False,
+            line_units=1,
+        ),
     )
 
 

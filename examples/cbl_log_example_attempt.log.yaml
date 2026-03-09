@@ -48,6 +48,21 @@ auto_tracks:
           kind: linear
           min: 0
           max: 100
+        track_header:
+          objects:
+            - kind: title
+              enabled: true
+              line_units: 1
+            - kind: scale
+              enabled: true
+              line_units: 1
+            - kind: legend
+              enabled: true
+              line_units: 2
+            - kind: divisions
+              enabled: true
+              reserve_space: true
+              line_units: 1
         style:
           color: "#424242"
     - channel: BI

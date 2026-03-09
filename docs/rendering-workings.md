@@ -148,3 +148,5 @@ Track-header legend space auto-fits to curve count:
   - `show_name`, `show_unit`, `show_limits`, `show_color`
 - in paired mode, each curve is ordered as `name` then `scale` immediately below.
 - paired-mode spacing can be tuned with `render.matplotlib.style.track_header.paired_scale_text_offset_ratio`.
+- optional `track_header.divisions` object renders header tick values in its own reserved line.
+- top x-axis labels are hidden in the plot area so scale/division text stays inside header slots.
