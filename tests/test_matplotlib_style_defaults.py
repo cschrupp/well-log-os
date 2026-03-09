@@ -62,7 +62,7 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
         )
         renderer = MatplotlibRenderer()
         adjusted = renderer._auto_adjust_track_header_height(document)
-        self.assertAlmostEqual(adjusted.page.track_header_height_mm, 14.0)
+        self.assertAlmostEqual(adjusted.page.track_header_height_mm, 22.0)
 
 
 if __name__ == "__main__":

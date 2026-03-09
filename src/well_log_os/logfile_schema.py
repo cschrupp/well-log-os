@@ -229,6 +229,9 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "legend_char_width_ratio": {"type": "number", "exclusiveMinimum": 0},
                 "legend_min_chars": {"type": "integer", "minimum": 1},
                 "legend_line_min_width": {"type": "number", "exclusiveMinimum": 0},
+                "scale_left_x": {"type": "number"},
+                "scale_unit_x": {"type": "number"},
+                "scale_right_x": {"type": "number"},
             },
         },
         "matplotlibStyleTrack": {

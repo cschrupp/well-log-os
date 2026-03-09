@@ -231,11 +231,9 @@ class MatplotlibRenderer(Renderer):
         return sum(1 for element in track.elements if isinstance(element, CurveElement))
 
     def _effective_header_line_units(self, track, header_item) -> int:
-        if (
-            header_item.kind == TrackHeaderObjectKind.LEGEND
-            and header_item.enabled
-            and header_item.reserve_space
-        ):
+        if not header_item.enabled or not header_item.reserve_space:
+            return header_item.line_units
+        if header_item.kind in {TrackHeaderObjectKind.LEGEND, TrackHeaderObjectKind.SCALE}:
             return max(header_item.line_units, self._curve_count(track))
         return header_item.line_units
 
@@ -366,7 +364,9 @@ class MatplotlibRenderer(Renderer):
                                 continue
                             frame = self._normalize_frame(page_layout.page, track_header.frame)
                             ax = fig.add_axes(frame)
-                            self._draw_track_header(ax, track_header.track, render_document)
+                            self._draw_track_header(
+                                ax, track_header.track, render_document, dataset
+                            )
                         for track_header in page_layout.track_header_bottom_frames:
                             if (
                                 track_header.frame.width_mm <= 0
@@ -375,7 +375,9 @@ class MatplotlibRenderer(Renderer):
                                 continue
                             frame = self._normalize_frame(page_layout.page, track_header.frame)
                             ax = fig.add_axes(frame)
-                            self._draw_track_header(ax, track_header.track, render_document)
+                            self._draw_track_header(
+                                ax, track_header.track, render_document, dataset
+                            )
                     for track_frame in page_layout.track_frames:
                         if track_frame.frame.width_mm <= 0 or track_frame.frame.height_mm <= 0:
                             continue
@@ -467,7 +469,7 @@ class MatplotlibRenderer(Renderer):
             fontsize=float(footer_style["page_fontsize"]),
         )
 
-    def _draw_track_header(self, ax, track, document) -> None:
+    def _draw_track_header(self, ax, track, document, dataset) -> None:
         track_header_style = self._style_section("track_header")
         ax.set_facecolor(str(track_header_style["background_color"]))
         ax.set_xticks([])
@@ -488,7 +490,7 @@ class MatplotlibRenderer(Renderer):
             if item.kind == TrackHeaderObjectKind.TITLE:
                 self._draw_track_header_title(ax, track, slot_top, slot_bottom)
             elif item.kind == TrackHeaderObjectKind.SCALE:
-                self._draw_track_header_scale(ax, track, document, slot_top, slot_bottom)
+                self._draw_track_header_scale(ax, track, document, dataset, slot_top, slot_bottom)
             elif item.kind == TrackHeaderObjectKind.LEGEND:
                 self._draw_track_header_legend(ax, track, slot_top, slot_bottom)
 
@@ -549,39 +551,128 @@ class MatplotlibRenderer(Renderer):
         ax,
         track,
         document,
+        dataset,
         slot_top: float,
         slot_bottom: float,
     ) -> None:
+        track_header_style = self._style_section("track_header")
         if self._is_reference_track(track):
             scale_text = self._reference_scale_text(track, document)
-        elif track.x_scale is None:
-            scale_text = "Scale: auto"
-        else:
-            kind = track.x_scale.kind.value.upper()
-            scale_text = f"{kind} {track.x_scale.minimum:g} to {track.x_scale.maximum:g}"
+            fontsize = self._slot_font_size(
+                ax,
+                slot_top,
+                slot_bottom,
+                min_pt=float(track_header_style["scale_min_pt"]),
+                max_pt=float(track_header_style["scale_max_pt"]),
+            )
+            ax.text(
+                float(track_header_style["text_x"]),
+                0.5 * (slot_top + slot_bottom),
+                scale_text,
+                transform=ax.transAxes,
+                ha="left",
+                va="center",
+                fontsize=fontsize,
+                clip_on=True,
+            )
+            return
 
-        track_header_style = self._style_section("track_header")
-        fontsize = self._slot_font_size(
-            ax,
-            slot_top,
-            slot_bottom,
-            min_pt=float(track_header_style["scale_min_pt"]),
-            max_pt=float(track_header_style["scale_max_pt"]),
-        )
-        ax.text(
-            float(track_header_style["text_x"]),
-            0.5 * (slot_top + slot_bottom),
-            scale_text,
-            transform=ax.transAxes,
-            ha="left",
-            va="center",
-            fontsize=fontsize,
-            clip_on=True,
-        )
+        curves = self._curve_elements(track)
+        if not curves:
+            fontsize = self._slot_font_size(
+                ax,
+                slot_top,
+                slot_bottom,
+                min_pt=float(track_header_style["scale_min_pt"]),
+                max_pt=float(track_header_style["scale_max_pt"]),
+            )
+            ax.text(
+                float(track_header_style["text_x"]),
+                0.5 * (slot_top + slot_bottom),
+                "Scale: auto",
+                transform=ax.transAxes,
+                ha="left",
+                va="center",
+                fontsize=fontsize,
+                clip_on=True,
+            )
+            return
+
+        slot_height = slot_top - slot_bottom
+        row_count = len(curves)
+        for index, element in enumerate(curves):
+            row_top = slot_top - (index * slot_height / row_count)
+            row_bottom = slot_top - ((index + 1) * slot_height / row_count)
+            y_center = 0.5 * (row_top + row_bottom)
+            fontsize = self._slot_font_size(
+                ax,
+                row_top,
+                row_bottom,
+                min_pt=float(track_header_style["scale_min_pt"]),
+                max_pt=float(track_header_style["scale_max_pt"]),
+            )
+            left_value, unit_text, right_value = self._curve_scale_text_triplet(
+                track,
+                element,
+                dataset,
+            )
+            ax.text(
+                float(track_header_style["scale_left_x"]),
+                y_center,
+                left_value,
+                transform=ax.transAxes,
+                ha="left",
+                va="center",
+                fontsize=fontsize,
+                color=element.style.color,
+                clip_on=True,
+            )
+            ax.text(
+                float(track_header_style["scale_unit_x"]),
+                y_center,
+                unit_text,
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+                fontsize=fontsize,
+                color=element.style.color,
+                clip_on=True,
+            )
+            ax.text(
+                float(track_header_style["scale_right_x"]),
+                y_center,
+                right_value,
+                transform=ax.transAxes,
+                ha="right",
+                va="center",
+                fontsize=fontsize,
+                color=element.style.color,
+                clip_on=True,
+            )
+
+    def _curve_elements(self, track) -> list[CurveElement]:
+        return [element for element in track.elements if isinstance(element, CurveElement)]
+
+    def _curve_scale_text_triplet(
+        self,
+        track,
+        element: CurveElement,
+        dataset: WellDataset,
+    ) -> tuple[str, str, str]:
+        scale = element.scale or track.x_scale
+        if scale is None:
+            return "auto", "", ""
+        left = scale.maximum if scale.reverse else scale.minimum
+        right = scale.minimum if scale.reverse else scale.maximum
+        unit_text = ""
+        channel = dataset.get_channel(element.channel)
+        if isinstance(channel, ScalarChannel):
+            unit_text = channel.value_unit or ""
+        return f"{left:g}", unit_text, f"{right:g}"
 
     def _draw_track_header_legend(self, ax, track, slot_top: float, slot_bottom: float) -> None:
         track_header_style = self._style_section("track_header")
-        curves = [element for element in track.elements if isinstance(element, CurveElement)]
+        curves = self._curve_elements(track)
         if not curves:
             fontsize = self._slot_font_size(
                 ax,
@@ -748,14 +839,25 @@ class MatplotlibRenderer(Renderer):
             self._draw_marker_callouts(ax, document, window)
             return
 
+        independent_curve_scales = self._uses_independent_curve_scales(track)
         for element in track.elements:
             if isinstance(element, CurveElement):
-                self._draw_curve(ax, track, element, document, dataset)
+                self._draw_curve(
+                    ax,
+                    track,
+                    element,
+                    document,
+                    dataset,
+                    independent_curve_scales=independent_curve_scales,
+                )
             elif isinstance(element, RasterElement):
                 self._draw_raster(ax, track, element, document, dataset)
 
-        self._configure_x_axis(ax, track)
-        self._apply_scale(ax, track)
+        if independent_curve_scales:
+            self._configure_independent_curve_axis(ax)
+        else:
+            self._configure_x_axis(ax, track)
+            self._apply_scale(ax, track)
         ax.grid(
             track.grid.major,
             axis="x",
@@ -770,17 +872,103 @@ class MatplotlibRenderer(Renderer):
             alpha=track.grid.minor_alpha,
             linewidth=float(grid_style["x_minor_linewidth"]),
         )
-        ax.tick_params(axis="x", labelsize=float(track_style["x_tick_labelsize"]))
-        ax.xaxis.tick_top()
+        if independent_curve_scales:
+            ax.tick_params(axis="x", which="both", top=False, bottom=False, labeltop=False)
+        else:
+            ax.tick_params(axis="x", labelsize=float(track_style["x_tick_labelsize"]))
+            ax.xaxis.tick_top()
         ax.tick_params(axis="y", length=0, labelleft=False)
 
-    def _draw_curve(self, ax, track, element, document, dataset) -> None:
+    def _uses_independent_curve_scales(self, track) -> bool:
+        if self._is_reference_track(track) or self._is_annotation_track(track):
+            return False
+        return self._curve_count(track) > 1
+
+    def _configure_independent_curve_axis(self, ax) -> None:
+        import matplotlib.ticker as mticker
+
+        ax.set_xscale("linear")
+        ax.set_xlim(0.0, 1.0)
+        ax.xaxis.set_major_locator(mticker.MultipleLocator(0.2))
+        ax.xaxis.set_minor_locator(mticker.MultipleLocator(0.1))
+
+    def _normalize_curve_values(self, values: np.ndarray, scale) -> tuple[np.ndarray, np.ndarray]:
+        mask = np.isfinite(values)
+        normalized = np.full(values.shape, np.nan, dtype=float)
+        if scale is None:
+            finite = values[mask]
+            if finite.size < 2:
+                return normalized, mask & False
+            min_value = float(np.nanmin(finite))
+            max_value = float(np.nanmax(finite))
+            if np.isclose(min_value, max_value):
+                return normalized, mask & False
+            scaled = (values[mask] - min_value) / (max_value - min_value)
+            normalized[mask] = np.clip(scaled, 0.0, 1.0)
+            return normalized, mask
+
+        if scale.kind == ScaleKind.LOG:
+            if scale.minimum <= 0 or scale.maximum <= 0 or np.isclose(scale.minimum, scale.maximum):
+                return normalized, mask & False
+            positive_mask = mask & (values > 0)
+            if not np.any(positive_mask):
+                return normalized, mask & False
+            low = np.log(scale.minimum)
+            high = np.log(scale.maximum)
+            scaled = (np.log(values[positive_mask]) - low) / (high - low)
+            if scale.reverse:
+                scaled = 1.0 - scaled
+            normalized[positive_mask] = np.clip(scaled, 0.0, 1.0)
+            return normalized, positive_mask
+
+        if np.isclose(scale.minimum, scale.maximum):
+            return normalized, mask & False
+        scaled = (values[mask] - scale.minimum) / (scale.maximum - scale.minimum)
+        if scale.reverse:
+            scaled = 1.0 - scaled
+        normalized[mask] = np.clip(scaled, 0.0, 1.0)
+        return normalized, mask
+
+    def _draw_curve(
+        self,
+        ax,
+        track,
+        element,
+        document,
+        dataset,
+        *,
+        independent_curve_scales: bool = False,
+    ) -> None:
         channel = dataset.get_channel(element.channel)
         if not isinstance(channel, ScalarChannel):
             raise TypeError(f"Curve element {element.channel} requires a scalar channel.")
         depth = channel.depth_in(document.depth_axis.unit, self.registry)
         values = channel.masked_values()
         scale = element.scale or track.x_scale
+
+        if independent_curve_scales:
+            normalized_values, value_mask = self._normalize_curve_values(values, scale)
+            if element.render_mode == "value_labels":
+                self._draw_curve_value_labels(
+                    ax,
+                    depth,
+                    normalized_values,
+                    element,
+                    scale,
+                    text_values=values,
+                    value_mask=value_mask,
+                )
+                return
+            ax.plot(
+                normalized_values[value_mask],
+                depth[value_mask],
+                color=element.style.color,
+                linewidth=element.style.line_width,
+                linestyle=element.style.line_style,
+                alpha=element.style.opacity,
+            )
+            return
+
         if scale is None:
             xmin = float(np.nanmin(values))
             xmax = float(np.nanmax(values))
@@ -788,7 +976,7 @@ class MatplotlibRenderer(Renderer):
             xmin = scale.minimum
             xmax = scale.maximum
         if element.render_mode == "value_labels":
-            self._draw_curve_value_labels(ax, depth, values, element, scale)
+            self._draw_curve_value_labels(ax, depth, values, element, scale, value_mask=None)
         elif scale is not None and scale.kind == ScaleKind.LOG:
             ax.set_xscale("log")
             valid = values > 0
@@ -812,16 +1000,32 @@ class MatplotlibRenderer(Renderer):
         else:
             ax.set_xlim(xmin, xmax)
 
-    def _draw_curve_value_labels(self, ax, depth, values, element, scale) -> None:
+    def _draw_curve_value_labels(
+        self,
+        ax,
+        depth,
+        values,
+        element,
+        scale,
+        *,
+        text_values=None,
+        value_mask=None,
+    ) -> None:
         labels = element.value_labels
         mask = np.isfinite(depth) & np.isfinite(values)
+        if value_mask is not None:
+            mask &= value_mask
         if scale is not None and scale.kind == ScaleKind.LOG:
             mask &= values > 0
         if not np.any(mask):
             return
 
         valid_depth = depth[mask]
-        valid_values = values[mask]
+        valid_plot_values = values[mask]
+        if text_values is None:
+            valid_text_values = valid_plot_values
+        else:
+            valid_text_values = text_values[mask]
         step = labels.step
         window_top = float(min(ax.get_ylim()))
         window_base = float(max(ax.get_ylim()))
@@ -840,9 +1044,10 @@ class MatplotlibRenderer(Renderer):
             target += step
 
         for index in sample_indices:
-            x_value = float(valid_values[index])
+            x_value = float(valid_plot_values[index])
+            text_value = float(valid_text_values[index])
             y_value = float(valid_depth[index])
-            text = self._format_number(x_value, labels.number_format, labels.precision)
+            text = self._format_number(text_value, labels.number_format, labels.precision)
             kwargs = {
                 "ha": labels.horizontal_alignment,
                 "va": labels.vertical_alignment,

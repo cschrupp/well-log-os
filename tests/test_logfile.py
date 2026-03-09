@@ -256,8 +256,11 @@ class LogFileTests(unittest.TestCase):
         self.assertEqual(combo.id, "combo")
         self.assertEqual(combo.title, "GR / RT")
         self.assertEqual(len(combo.elements), 2)
+        self.assertIsNone(combo.x_scale)
         self.assertEqual(combo.elements[0].channel, "GR")
         self.assertEqual(combo.elements[1].channel, "RT")
+        self.assertIsNotNone(combo.elements[0].scale)
+        self.assertIsNotNone(combo.elements[1].scale)
 
     def test_page_spacing_fields_are_supported_in_logfile_yaml(self) -> None:
         payload = build_mapping()

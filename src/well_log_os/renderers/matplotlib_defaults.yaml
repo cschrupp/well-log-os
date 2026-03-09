@@ -40,6 +40,9 @@ track_header:
   legend_char_width_ratio: 0.75
   legend_min_chars: 4
   legend_line_min_width: 0.75
+  scale_left_x: 0.02
+  scale_unit_x: 0.5
+  scale_right_x: 0.98
 track:
   background_color: white
   depth_background_color: "#f2f2f2"

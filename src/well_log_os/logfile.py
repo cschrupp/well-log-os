@@ -585,12 +585,14 @@ def _build_tracks(dataset: WellDataset, auto_tracks: dict[str, Any]) -> list[dic
         default_id = f"{_sanitize_id(channel.mnemonic) or 'curve'}_{index}"
         track_id = str(configure.get("id", default_id))
         position = int(configure["position"]) if "position" in configure else None
+        curve_scale = _build_scale(channel.masked_values(), configure.get("scale"))
 
         curve_element = {
             "kind": "curve",
             "channel": channel.mnemonic,
             "label": channel.mnemonic,
             "style": style,
+            "scale": curve_scale,
             "render_mode": str(configure.get("curve_render_mode", "line")),
             "value_labels": value_labels,
         }
@@ -628,7 +630,7 @@ def _build_tracks(dataset: WellDataset, auto_tracks: dict[str, Any]) -> list[dic
             "width_mm": width_mm,
             "track_header": header,
             "grid": grid,
-            "x_scale": _build_scale(channel.masked_values(), configure.get("scale")),
+            "x_scale": curve_scale,
             "elements": [curve_element],
         }
         grouped_meta[track_id] = {"position": position, "order": index}
@@ -638,6 +640,12 @@ def _build_tracks(dataset: WellDataset, auto_tracks: dict[str, Any]) -> list[dic
         raise TemplateValidationError("No configured tracks were added from auto_tracks.tracks.")
 
     for track_id, grouped_track in grouped_tracks.items():
+        curve_count = sum(
+            1 for element in grouped_track["elements"] if element.get("kind") == "curve"
+        )
+        if curve_count > 1:
+            # Multi-curve overlays use per-curve element scales instead of one shared track scale.
+            grouped_track["x_scale"] = None
         meta = grouped_meta[track_id]
         positioned_tracks.append((meta["position"], int(meta["order"]), grouped_track))
 
