@@ -20,6 +20,9 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
         renderer = MatplotlibRenderer()
         self.assertEqual(renderer.style["track"]["frame_linewidth"], 0.8)
         self.assertEqual(renderer.style["grid"]["depth_major_alpha"], 0.9)
+        self.assertEqual(renderer.style["track"]["reference_grid_mode"], "edge_ticks")
+        self.assertEqual(renderer.style["track"]["reference_label_align"], "center")
+        self.assertEqual(renderer.style["track"]["reference_label_x"], 0.5)
 
     def test_renderer_style_override_deep_merges(self) -> None:
         renderer = MatplotlibRenderer(

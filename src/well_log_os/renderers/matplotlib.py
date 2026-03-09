@@ -145,6 +145,12 @@ class MatplotlibRenderer(Renderer):
         reference = self._reference_spec(track)
         transform = blended_transform_factory(ax.transAxes, ax.transData)
         x = float(track_style["reference_label_x"])
+        align = str(track_style.get("reference_label_align", "center")).lower()
+        if align not in {"left", "center", "right"}:
+            align = "center"
+        font_family = track_style.get("reference_label_fontfamily")
+        font_weight = str(track_style.get("reference_label_fontweight", "normal"))
+        font_style = str(track_style.get("reference_label_fontstyle", "normal"))
         start = np.floor(window.start / major_step) * major_step
         epsilon = max(abs(major_step) * 1e-6, 1e-8)
         value = start
@@ -152,19 +158,71 @@ class MatplotlibRenderer(Renderer):
             if value >= window.start - epsilon:
                 text = self._format_reference_value(float(value), reference)
                 rotation = 90 if reference.values_orientation == "vertical" else 0
+                kwargs = {
+                    "transform": transform,
+                    "ha": align,
+                    "va": "center",
+                    "fontsize": float(track_style["reference_label_fontsize"]),
+                    "color": str(track_style["reference_label_color"]),
+                    "rotation": rotation,
+                    "clip_on": True,
+                    "fontweight": font_weight,
+                    "fontstyle": font_style,
+                }
+                if isinstance(font_family, str) and font_family.strip():
+                    kwargs["fontfamily"] = font_family
                 ax.text(
                     x,
                     float(value),
                     text,
-                    transform=transform,
-                    ha="left",
-                    va="center",
-                    fontsize=float(track_style["reference_label_fontsize"]),
-                    color=str(track_style["reference_label_color"]),
-                    rotation=rotation,
-                    clip_on=True,
+                    **kwargs,
                 )
             value += major_step
+
+    def _draw_reference_edge_ticks(
+        self,
+        ax,
+        window,
+        *,
+        major_step: float,
+        minor_step: float,
+        draw_minor: bool,
+    ) -> None:
+        from matplotlib.transforms import blended_transform_factory
+
+        track_style = self._style_section("track")
+        transform = blended_transform_factory(ax.transAxes, ax.transData)
+        major_len = min(max(float(track_style["reference_major_tick_length_ratio"]), 0.0), 0.5)
+        minor_len = min(max(float(track_style["reference_minor_tick_length_ratio"]), 0.0), 0.5)
+        tick_color = str(track_style.get("reference_tick_color", "#5f5f5f"))
+        tick_linewidth = float(track_style.get("reference_tick_linewidth", 0.65))
+
+        def _draw_ticks_for_step(step: float, tick_len: float) -> None:
+            start = np.floor(window.start / step) * step
+            epsilon = max(abs(step) * 1e-6, 1e-8)
+            value = start
+            while value <= window.stop + epsilon:
+                if value >= window.start - epsilon:
+                    y = float(value)
+                    ax.plot(
+                        [0.0, tick_len],
+                        [y, y],
+                        transform=transform,
+                        color=tick_color,
+                        linewidth=tick_linewidth,
+                    )
+                    ax.plot(
+                        [1.0 - tick_len, 1.0],
+                        [y, y],
+                        transform=transform,
+                        color=tick_color,
+                        linewidth=tick_linewidth,
+                    )
+                value += step
+
+        _draw_ticks_for_step(major_step, major_len)
+        if draw_minor and minor_step > 0:
+            _draw_ticks_for_step(minor_step, minor_len)
 
     def _build_continuous_strip_document(self, document: LogDocument) -> LogDocument:
         if self.continuous_strip_page_height_mm is None:
@@ -256,7 +314,16 @@ class MatplotlibRenderer(Renderer):
                     if draw_footer:
                         self._draw_footer(fig, render_document, page_layout)
                     if draw_track_header:
-                        for track_header in page_layout.track_header_frames:
+                        for track_header in page_layout.track_header_top_frames:
+                            if (
+                                track_header.frame.width_mm <= 0
+                                or track_header.frame.height_mm <= 0
+                            ):
+                                continue
+                            frame = self._normalize_frame(page_layout.page, track_header.frame)
+                            ax = fig.add_axes(frame)
+                            self._draw_track_header(ax, track_header.track, render_document)
+                        for track_header in page_layout.track_header_bottom_frames:
                             if (
                                 track_header.frame.width_mm <= 0
                                 or track_header.frame.height_mm <= 0
@@ -562,7 +629,17 @@ class MatplotlibRenderer(Renderer):
             major_step=major_step,
             minor_step=minor_step,
         )
-        self._draw_depth_grid(ax, show_minor=draw_minor_grid)
+        reference_grid_mode = str(track_style.get("reference_grid_mode", "edge_ticks")).lower()
+        if is_reference_track and reference_grid_mode == "edge_ticks":
+            self._draw_reference_edge_ticks(
+                ax,
+                window,
+                major_step=major_step,
+                minor_step=minor_step,
+                draw_minor=draw_minor_grid,
+            )
+        else:
+            self._draw_depth_grid(ax, show_minor=draw_minor_grid)
 
         for zone in document.zones:
             if zone.base < window.start or zone.top > window.stop:

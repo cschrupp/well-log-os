@@ -50,6 +50,14 @@ Flow:
 
 Each section can override only the values you care about.
 
+Reference-track number/tick controls live under `render.matplotlib.style.track`, including:
+- `reference_grid_mode` (`full` or `edge_ticks`)
+- `reference_major_tick_length_ratio`, `reference_minor_tick_length_ratio`
+- `reference_tick_color`, `reference_tick_linewidth`
+- `reference_label_x`, `reference_label_align`
+- `reference_label_fontsize`, `reference_label_color`
+- `reference_label_fontfamily`, `reference_label_fontweight`, `reference_label_fontstyle`
+
 Example:
 
 ```yaml

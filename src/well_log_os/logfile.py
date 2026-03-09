@@ -159,6 +159,9 @@ def _normalize_track_item(item: Any, *, context: str) -> dict[str, Any]:
 def _validate_track_configure(configure: dict[str, Any], *, context: str) -> None:
     _ = float(configure["width_mm"])
     _ = str(configure.get("title_template", "{mnemonic} [{unit}]"))
+    if "position" in configure:
+        if int(configure["position"]) <= 0:
+            raise TemplateValidationError(f"{context}.position must be positive.")
     style = _ensure_mapping(configure["style"], context=f"{context}.style")
     if "color" not in style:
         raise TemplateValidationError(f"{context}.style.color is required.")
@@ -302,6 +305,9 @@ def _validate_auto_tracks(auto_tracks: dict[str, Any]) -> None:
     _ = str(depth_track["id"])
     _ = str(depth_track["title"])
     _ = float(depth_track["width_mm"])
+    if "position" in depth_track:
+        if int(depth_track["position"]) <= 0:
+            raise TemplateValidationError("auto_tracks.depth_track.position must be positive.")
     reference_data = depth_track.get("reference")
     if reference_data is not None:
         reference = _ensure_mapping(
@@ -490,16 +496,21 @@ def _build_tracks(dataset: WellDataset, auto_tracks: dict[str, Any]) -> list[dic
     max_tracks = max(int(auto_tracks.get("max_tracks", len(track_items))), 1)
     by_upper = {channel.mnemonic.upper(): channel for channel in scalar_channels}
 
-    tracks = [
-        {
-            "id": str(depth_track["id"]),
-            "title": str(depth_track["title"]),
-            "kind": "reference",
-            "width_mm": float(depth_track["width_mm"]),
-            "track_header": deepcopy(depth_track.get("track_header", {})),
-            "reference": deepcopy(depth_track.get("reference", {})),
-        }
-    ]
+    positioned_tracks: list[tuple[int | None, int, dict[str, Any]]] = []
+    positioned_tracks.append(
+        (
+            int(depth_track["position"]) if "position" in depth_track else None,
+            0,
+            {
+                "id": str(depth_track["id"]),
+                "title": str(depth_track["title"]),
+                "kind": "reference",
+                "width_mm": float(depth_track["width_mm"]),
+                "track_header": deepcopy(depth_track.get("track_header", {})),
+                "reference": deepcopy(depth_track.get("reference", {})),
+            },
+        )
+    )
 
     added = 0
     for index, item in enumerate(track_items, start=1):
@@ -543,24 +554,28 @@ def _build_tracks(dataset: WellDataset, auto_tracks: dict[str, Any]) -> list[dic
         default_id = f"{_sanitize_id(channel.mnemonic) or 'curve'}_{index}"
         track_id = str(configure.get("id", default_id))
 
-        tracks.append(
-            {
-                "id": track_id,
-                "title": title or channel.mnemonic,
-                "kind": "normal",
-                "width_mm": width_mm,
-                "track_header": header,
-                "grid": grid,
-                "x_scale": _build_scale(channel.masked_values(), configure.get("scale")),
-                "elements": [
-                    {
-                        "kind": "curve",
-                        "channel": channel.mnemonic,
-                        "label": channel.mnemonic,
-                        "style": style,
-                    }
-                ],
-            }
+        positioned_tracks.append(
+            (
+                int(configure["position"]) if "position" in configure else None,
+                index,
+                {
+                    "id": track_id,
+                    "title": title or channel.mnemonic,
+                    "kind": "normal",
+                    "width_mm": width_mm,
+                    "track_header": header,
+                    "grid": grid,
+                    "x_scale": _build_scale(channel.masked_values(), configure.get("scale")),
+                    "elements": [
+                        {
+                            "kind": "curve",
+                            "channel": channel.mnemonic,
+                            "label": channel.mnemonic,
+                            "style": style,
+                        }
+                    ],
+                },
+            )
         )
         added += 1
         if added >= max_tracks:
@@ -568,7 +583,32 @@ def _build_tracks(dataset: WellDataset, auto_tracks: dict[str, Any]) -> list[dic
 
     if added == 0:
         raise TemplateValidationError("No configured tracks were added from auto_tracks.tracks.")
-    return tracks
+
+    track_count = len(positioned_tracks)
+    ordered: list[dict[str, Any] | None] = [None] * track_count
+
+    explicit = sorted(
+        (item for item in positioned_tracks if item[0] is not None),
+        key=lambda item: (int(item[0] or 0), item[1]),
+    )
+    for position, _, track in explicit:
+        assert position is not None  # for type checkers
+        slot = min(max(position, 1), track_count) - 1
+        while slot < track_count and ordered[slot] is not None:
+            slot += 1
+        if slot >= track_count:
+            slot = next(index for index, current in enumerate(ordered) if current is None)
+        ordered[slot] = track
+
+    for position, _, track in sorted(
+        (item for item in positioned_tracks if item[0] is None),
+        key=lambda item: item[1],
+    ):
+        _ = position
+        slot = next(index for index, current in enumerate(ordered) if current is None)
+        ordered[slot] = track
+
+    return [track for track in ordered if track is not None]
 
 
 def _apply_reference_layout_overrides(document: dict[str, Any]) -> None:

@@ -112,6 +112,32 @@ class LayoutTests(unittest.TestCase):
             page_layout.track_frames[1].frame.width_mm,
         )
 
+    def test_track_headers_only_render_on_layout_start_and_end(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "headers once",
+                "page": {"size": "A4", "header_height_mm": 20, "track_header_height_mm": 9},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {"id": "depth", "title": "Depth", "kind": "depth", "width_mm": 16},
+                    {"id": "gr", "title": "GR", "kind": "curve", "width_mm": 25, "elements": []},
+                ],
+            }
+        )
+        layouts = LayoutEngine().layout(document, self.build_dataset())
+        self.assertGreaterEqual(len(layouts), 2)
+
+        first = layouts[0]
+        last = layouts[-1]
+        self.assertEqual(len(first.track_header_top_frames), len(first.track_frames))
+        self.assertEqual(len(first.track_header_bottom_frames), 0)
+        self.assertEqual(len(last.track_header_bottom_frames), len(last.track_frames))
+
+        if len(layouts) > 2:
+            middle = layouts[1]
+            self.assertEqual(len(middle.track_header_top_frames), 0)
+            self.assertEqual(len(middle.track_header_bottom_frames), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

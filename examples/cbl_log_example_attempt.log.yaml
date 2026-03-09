@@ -10,6 +10,8 @@ render:
   dpi: 300
   continuous_strip_page_height_mm: 297
 auto_tracks:
+  depth_track:
+    position: 2
   max_tracks: 5
   tracks:
     - channel: GR_STGC

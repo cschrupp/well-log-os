@@ -207,6 +207,19 @@ class LogFileTests(unittest.TestCase):
         self.assertEqual(document.depth_axis.major_step, 50.0)
         self.assertAlmostEqual(document.depth_axis.minor_step, 10.0)
 
+    def test_track_positions_allow_reordering_in_layout(self) -> None:
+        payload = build_mapping()
+        payload["auto_tracks"]["depth_track"]["position"] = 2
+        payload["auto_tracks"]["tracks"][0]["configure"]["position"] = 1
+        spec = logfile_from_mapping(payload)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("example_input.las"),
+        )
+        self.assertEqual(document.tracks[0].id, "gr")
+        self.assertEqual(document.tracks[1].id, "depth")
+
     def test_load_logfile_merges_template_yaml_with_savefile_overrides(self) -> None:
         template_payload = {
             "render": {"backend": "matplotlib", "output_path": "base.pdf", "dpi": 300},
