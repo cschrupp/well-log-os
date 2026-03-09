@@ -43,6 +43,149 @@ def _ensure_sequence(value: Any, *, context: str) -> list[Any]:
     return value
 
 
+def _track_channel_key(item: Any) -> str | None:
+    if isinstance(item, str):
+        return item.strip().upper() or None
+    if isinstance(item, dict):
+        channel = item.get("channel")
+        if isinstance(channel, str):
+            return channel.strip().upper() or None
+    return None
+
+
+def _normalize_track_for_merge(item: Any) -> Any:
+    if isinstance(item, str):
+        return {"channel": item}
+    return deepcopy(item)
+
+
+def _deep_merge_config(base: Any, override: Any, *, path: tuple[str, ...] = ()) -> Any:
+    if isinstance(base, dict) and isinstance(override, dict):
+        merged: dict[str, Any] = deepcopy(base)
+        for key, value in override.items():
+            if key in merged:
+                merged[key] = _deep_merge_config(merged[key], value, path=(*path, key))
+            else:
+                merged[key] = deepcopy(value)
+        return merged
+
+    if isinstance(base, list) and isinstance(override, list):
+        if path == ("auto_tracks", "tracks"):
+            return _merge_auto_track_lists(base, override)
+        return deepcopy(override)
+
+    return deepcopy(override)
+
+
+def _merge_auto_track_lists(base_items: list[Any], override_items: list[Any]) -> list[Any]:
+    merged_items = [_normalize_track_for_merge(item) for item in base_items]
+    by_channel: dict[str, int] = {}
+    for index, item in enumerate(merged_items):
+        channel_key = _track_channel_key(item)
+        if channel_key is not None and channel_key not in by_channel:
+            by_channel[channel_key] = index
+
+    for item in override_items:
+        normalized_item = _normalize_track_for_merge(item)
+        channel_key = _track_channel_key(normalized_item)
+        if channel_key is not None and channel_key in by_channel:
+            existing_index = by_channel[channel_key]
+            existing_item = merged_items[existing_index]
+            if isinstance(existing_item, dict) and isinstance(normalized_item, dict):
+                merged_items[existing_index] = _deep_merge_config(existing_item, normalized_item)
+            else:
+                merged_items[existing_index] = normalized_item
+            continue
+        merged_items.append(normalized_item)
+        if channel_key is not None:
+            by_channel[channel_key] = len(merged_items) - 1
+    return merged_items
+
+
+def _load_yaml_mapping(path: Path, *, context: str) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        payload = yaml.safe_load(handle) or {}
+    if not isinstance(payload, dict):
+        raise TemplateValidationError(f"{context} root must be a mapping.")
+    return payload
+
+
+def _resolve_template_inheritance(
+    payload: dict[str, Any],
+    *,
+    base_dir: Path,
+    visited_templates: set[Path] | None = None,
+) -> dict[str, Any]:
+    template_ref = payload.get("template")
+    if template_ref is None:
+        return deepcopy(payload)
+
+    template_section = _ensure_mapping(template_ref, context="template")
+    template_path_value = template_section.get("path")
+    if not isinstance(template_path_value, str) or not template_path_value.strip():
+        raise TemplateValidationError("template.path must be a non-empty string.")
+
+    template_path = Path(template_path_value)
+    if not template_path.is_absolute():
+        template_path = (base_dir / template_path).resolve()
+    else:
+        template_path = template_path.resolve()
+
+    visited = set() if visited_templates is None else set(visited_templates)
+    if template_path in visited:
+        raise TemplateValidationError(f"Template inheritance cycle detected at {template_path}.")
+    visited.add(template_path)
+
+    template_payload = _load_yaml_mapping(template_path, context=f"Template file {template_path}")
+    resolved_template = _resolve_template_inheritance(
+        template_payload,
+        base_dir=template_path.parent,
+        visited_templates=visited,
+    )
+
+    override = deepcopy(payload)
+    override.pop("template", None)
+    return _deep_merge_config(resolved_template, override)
+
+
+def _normalize_track_item(item: Any, *, context: str) -> dict[str, Any]:
+    if isinstance(item, str):
+        return {"channel": item}
+    return _ensure_mapping(item, context=context)
+
+
+def _validate_track_configure(configure: dict[str, Any], *, context: str) -> None:
+    _ = float(configure["width_mm"])
+    _ = str(configure.get("title_template", "{mnemonic} [{unit}]"))
+    style = _ensure_mapping(configure["style"], context=f"{context}.style")
+    if "color" not in style:
+        raise TemplateValidationError(f"{context}.style.color is required.")
+    _ = str(style["color"])
+    if "scale" in configure:
+        scale = _ensure_mapping(
+            configure["scale"],
+            context=f"{context}.scale",
+        )
+        if "min" in scale or "max" in scale:
+            if "min" not in scale or "max" not in scale:
+                raise TemplateValidationError(f"{context}.scale must define both min and max.")
+            _ = float(scale["min"])
+            _ = float(scale["max"])
+        if "kind" in scale:
+            kind = str(scale["kind"]).strip().lower()
+            if kind not in {"auto", "linear", "log"}:
+                raise TemplateValidationError(f"{context}.scale.kind must be auto, linear, or log.")
+        if "percentile_low" in scale:
+            _ = float(scale["percentile_low"])
+        if "percentile_high" in scale:
+            _ = float(scale["percentile_high"])
+        if "log_ratio_threshold" in scale:
+            _ = float(scale["log_ratio_threshold"])
+        if "min_positive" in scale:
+            if float(scale["min_positive"]) <= 0:
+                raise TemplateValidationError(f"{context}.scale.min_positive must be positive.")
+
+
 def logfile_from_mapping(data: dict[str, Any]) -> LogFileSpec:
     validate_logfile_mapping(data)
     root = _ensure_mapping(data, context="logfile")
@@ -80,12 +223,10 @@ def logfile_from_mapping(data: dict[str, Any]) -> LogFileSpec:
 
 
 def load_logfile(path: str | Path) -> LogFileSpec:
-    file_path = Path(path)
-    with file_path.open("r", encoding="utf-8") as handle:
-        payload = yaml.safe_load(handle) or {}
-    if not isinstance(payload, dict):
-        raise TemplateValidationError("Log file root must be a mapping.")
-    return logfile_from_mapping(payload)
+    file_path = Path(path).resolve()
+    payload = _load_yaml_mapping(file_path, context="Log file")
+    resolved_payload = _resolve_template_inheritance(payload, base_dir=file_path.parent)
+    return logfile_from_mapping(resolved_payload)
 
 
 def _validate_auto_tracks(auto_tracks: dict[str, Any]) -> None:
@@ -102,54 +243,47 @@ def _validate_auto_tracks(auto_tracks: dict[str, Any]) -> None:
     if max_tracks <= 0:
         raise TemplateValidationError("auto_tracks.max_tracks must be positive.")
 
+    default_configure_data = auto_tracks.get("default_configure")
+    default_configure: dict[str, Any] | None = None
+    if default_configure_data is not None:
+        default_configure = deepcopy(
+            _ensure_mapping(default_configure_data, context="auto_tracks.default_configure")
+        )
+        _validate_track_configure(default_configure, context="auto_tracks.default_configure")
+
     track_items = _ensure_sequence(auto_tracks["tracks"], context="auto_tracks.tracks")
     if not track_items:
         raise TemplateValidationError("auto_tracks.tracks cannot be empty.")
 
+    normalized_items: list[dict[str, Any]] = []
     for index, item in enumerate(track_items):
-        track_item = _ensure_mapping(item, context=f"auto_tracks.tracks[{index}]")
+        track_item = _normalize_track_item(item, context=f"auto_tracks.tracks[{index}]")
+        if "channel" not in track_item:
+            raise TemplateValidationError(f"auto_tracks.tracks[{index}].channel is required.")
         _ = str(track_item["channel"])
-        configure = _ensure_mapping(
-            track_item["configure"], context=f"auto_tracks.tracks[{index}].configure"
-        )
-        _ = float(configure["width_mm"])
-        _ = str(configure.get("title_template", "{mnemonic} [{unit}]"))
-        style = _ensure_mapping(
-            configure["style"], context=f"auto_tracks.tracks[{index}].configure.style"
-        )
-        if "color" not in style:
+        raw_configure = track_item.get("configure")
+        if raw_configure is None and default_configure is None:
             raise TemplateValidationError(
-                f"auto_tracks.tracks[{index}].configure.style.color is required."
+                f"auto_tracks.tracks[{index}].configure is required when "
+                "auto_tracks.default_configure is not defined."
             )
-        _ = str(style["color"])
-        if "scale" in configure:
-            scale = _ensure_mapping(
-                configure["scale"],
-                context=f"auto_tracks.tracks[{index}].configure.scale",
+        if raw_configure is None:
+            configure = deepcopy(default_configure)
+        else:
+            explicit_configure = _ensure_mapping(
+                raw_configure, context=f"auto_tracks.tracks[{index}].configure"
             )
-            if "min" in scale or "max" in scale:
-                if "min" not in scale or "max" not in scale:
-                    raise TemplateValidationError(
-                        f"auto_tracks.tracks[{index}].configure.scale must define both min and max."
-                    )
-                _ = float(scale["min"])
-                _ = float(scale["max"])
-            if "kind" in scale:
-                kind = str(scale["kind"]).strip().lower()
-                if kind not in {"auto", "linear", "log"}:
-                    raise TemplateValidationError(
-                        "auto_tracks.tracks["
-                        f"{index}"
-                        "].configure.scale.kind must be auto, linear, or log."
-                    )
-            if "percentile_low" in scale:
-                _ = float(scale["percentile_low"])
-            if "percentile_high" in scale:
-                _ = float(scale["percentile_high"])
-            if "log_ratio_threshold" in scale:
-                _ = float(scale["log_ratio_threshold"])
-            if "min_positive" in scale:
-                _ = float(scale["min_positive"])
+            if default_configure is None:
+                configure = deepcopy(explicit_configure)
+            else:
+                configure = _deep_merge_config(default_configure, explicit_configure)
+        _validate_track_configure(configure, context=f"auto_tracks.tracks[{index}].configure")
+
+        normalized_item = deepcopy(track_item)
+        normalized_item["configure"] = configure
+        normalized_items.append(normalized_item)
+
+    auto_tracks["tracks"] = normalized_items
 
 
 def _sanitize_id(text: str) -> str:

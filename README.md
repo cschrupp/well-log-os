@@ -73,6 +73,28 @@ uv run ruff check .
 
 See [examples/triple_combo.yaml](examples/triple_combo.yaml).
 
+## Template + Savefile Model
+
+`well_log_os` now supports YAML template inheritance for logfile configs.
+
+- Put reusable layout defaults in template files, for example:
+  - [templates/wireline_base.template.yaml](templates/wireline_base.template.yaml)
+- Create per-job savefiles that reference templates:
+  - [examples/cbl_main.log.yaml](examples/cbl_main.log.yaml)
+
+Savefiles use:
+
+```yaml
+template:
+  path: ../templates/wireline_base.template.yaml
+```
+
+Behavior:
+- Savefile values override template values.
+- `auto_tracks.tracks` uses channel-aware merging (match by `channel`).
+- Track entries can be short (`- GR`) when `auto_tracks.default_configure` is defined.
+- Template YAML files can be partial; the merged savefile result is what gets validated and rendered.
+
 ## Real Data Demo
 
 Use the master loader (single command for any log-file YAML):
@@ -105,8 +127,9 @@ Or pass a specific log file:
 uv run examples/real_data_demo.py examples/cbl_main.log.yaml
 ```
 
-Use [examples/cbl_main.log.yaml](examples/cbl_main.log.yaml) as the base file your future UI can load/save.
-Each track in that file has its own `configure` section under `auto_tracks.tracks`.
+Use [templates/wireline_base.template.yaml](templates/wireline_base.template.yaml) as a reusable
+layout template, then create/modify job savefiles like
+[examples/cbl_main.log.yaml](examples/cbl_main.log.yaml).
 Keep local input/output assets under:
 - `workspace/data/` for LAS/DLIS
 - `workspace/renders/` for generated PDF/HTML/JSON outputs

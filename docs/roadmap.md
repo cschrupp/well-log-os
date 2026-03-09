@@ -24,6 +24,7 @@ Decision history is tracked in `docs/decision-log.md`.
 - Plotly renderer provides interactive visualization baseline.
 - Synthetic example exists for fast iteration (`examples/synthetic_demo.py` + `examples/triple_combo.yaml`).
 - Log-file schema validation is implemented (JSON Schema + CLI `validate`).
+- YAML template/savefile inheritance is implemented for reusable log designs.
 
 ## Development Plan
 

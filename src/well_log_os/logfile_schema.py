@@ -157,10 +157,16 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "on_missing": {"type": "string", "enum": ["skip", "error"]},
                 "max_tracks": {"type": "integer", "minimum": 1},
                 "depth_track": {"$ref": "#/$defs/depthTrack"},
+                "default_configure": {"$ref": "#/$defs/trackConfigure"},
                 "tracks": {
                     "type": "array",
                     "minItems": 1,
-                    "items": {"$ref": "#/$defs/autoTrackEntry"},
+                    "items": {
+                        "anyOf": [
+                            {"type": "string", "minLength": 1},
+                            {"$ref": "#/$defs/autoTrackEntry"},
+                        ]
+                    },
                 },
             },
         },
@@ -177,12 +183,12 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
         },
         "autoTrackEntry": {
             "type": "object",
-            "required": ["channel", "configure"],
+            "required": ["channel"],
             "additionalProperties": False,
             "properties": {
                 "channel": {"type": "string", "minLength": 1},
                 "required": {"type": "boolean"},
-                "configure": {"$ref": "#/$defs/trackConfigure"},
+                "configure": {"$ref": "#/$defs/trackConfigurePatch"},
             },
         },
         "trackConfigure": {
@@ -203,6 +209,19 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
         "style": {
             "type": "object",
             "required": ["color"],
+            "additionalProperties": False,
+            "properties": {
+                "color": {"type": "string", "minLength": 1},
+                "line_width": {"type": "number", "exclusiveMinimum": 0},
+                "line_style": {"type": "string"},
+                "opacity": {"type": "number", "minimum": 0, "maximum": 1},
+                "fill_color": {"type": "string"},
+                "fill_alpha": {"type": "number", "minimum": 0, "maximum": 1},
+                "colormap": {"type": "string"},
+            },
+        },
+        "stylePatch": {
+            "type": "object",
             "additionalProperties": False,
             "properties": {
                 "color": {"type": "string", "minLength": 1},
@@ -248,6 +267,45 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                     "then": {"required": ["min", "max"]},
                 }
             ],
+        },
+        "autoTrackScalePatch": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "kind": {"type": "string", "enum": ["auto", "linear", "log"]},
+                "min": {"type": "number"},
+                "max": {"type": "number"},
+                "reverse": {"type": "boolean"},
+                "percentile_low": {"type": "number"},
+                "percentile_high": {"type": "number"},
+                "log_ratio_threshold": {"type": "number"},
+                "min_positive": {"type": "number", "exclusiveMinimum": 0},
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "anyOf": [
+                            {"required": ["min"]},
+                            {"required": ["max"]},
+                        ]
+                    },
+                    "then": {"required": ["min", "max"]},
+                }
+            ],
+        },
+        "trackConfigurePatch": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "id": {"type": "string", "minLength": 1},
+                "title": {"type": "string"},
+                "title_template": {"type": "string"},
+                "width_mm": {"type": "number", "exclusiveMinimum": 0},
+                "style": {"$ref": "#/$defs/stylePatch"},
+                "grid": {"$ref": "#/$defs/grid"},
+                "scale": {"$ref": "#/$defs/autoTrackScalePatch"},
+                "track_header": {"$ref": "#/$defs/trackHeader"},
+            },
         },
         "trackHeader": {
             "type": "object",

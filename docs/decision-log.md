@@ -33,6 +33,7 @@ This file records project decisions that should remain stable unless explicitly 
 - Rendering is executed through a master log-file pipeline/CLI, not per-file loaders.
 - Log-file YAML is validated with a JSON Schema before parsing/building.
 - CLI includes a dedicated `validate` command for logfile preflight checks.
+- Log-file configs support YAML template inheritance (`template.path`) plus savefile overrides.
 - Track header data is modeled as typed objects (`title`, `scale`, `legend`), not ad-hoc text.
 - Track header objects support:
   - `enabled` to show/hide content

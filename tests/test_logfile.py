@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import unittest
+from copy import deepcopy
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
+import yaml
 
 from well_log_os.errors import TemplateValidationError
-from well_log_os.logfile import build_document_for_logfile, logfile_from_mapping
+from well_log_os.logfile import build_document_for_logfile, load_logfile, logfile_from_mapping
 from well_log_os.model import ScalarChannel, WellDataset
 
 
@@ -127,12 +130,12 @@ class LogFileTests(unittest.TestCase):
         with self.assertRaises(TemplateValidationError):
             logfile_from_mapping(payload)
 
-    def test_schema_error_reports_required_path(self) -> None:
+    def test_track_configure_is_required_without_default(self) -> None:
         payload = build_mapping()
         del payload["auto_tracks"]["tracks"][0]["configure"]
         with self.assertRaises(TemplateValidationError) as ctx:
             logfile_from_mapping(payload)
-        self.assertIn("$.auto_tracks.tracks[0]", str(ctx.exception))
+        self.assertIn("auto_tracks.tracks[0].configure is required", str(ctx.exception))
 
     def test_schema_error_reports_invalid_dpi_path(self) -> None:
         payload = build_mapping()
@@ -140,6 +143,86 @@ class LogFileTests(unittest.TestCase):
         with self.assertRaises(TemplateValidationError) as ctx:
             logfile_from_mapping(payload)
         self.assertIn("$.render.dpi", str(ctx.exception))
+
+    def test_default_configure_supports_string_track_entries(self) -> None:
+        payload = build_mapping()
+        payload["auto_tracks"]["default_configure"] = deepcopy(
+            payload["auto_tracks"]["tracks"][0]["configure"]
+        )
+        payload["auto_tracks"]["tracks"] = [
+            "GR",
+            {
+                "channel": "RT",
+                "configure": {
+                    "style": {"color": "#ff5500"},
+                },
+            },
+        ]
+
+        spec = logfile_from_mapping(payload)
+        self.assertEqual(spec.auto_tracks["tracks"][0]["channel"], "GR")
+        self.assertEqual(spec.auto_tracks["tracks"][0]["configure"]["width_mm"], 28)
+        self.assertEqual(spec.auto_tracks["tracks"][1]["configure"]["style"]["color"], "#ff5500")
+
+    def test_load_logfile_merges_template_yaml_with_savefile_overrides(self) -> None:
+        template_payload = {
+            "render": {"backend": "matplotlib", "output_path": "base.pdf", "dpi": 300},
+            "document": {
+                "name": "{WELL} Template",
+                "page": {"size": "A4", "continuous": True},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "header": {"title": "{WELL}", "subtitle": "{SOURCE_FILENAME}", "fields": []},
+                "footer": {"lines": []},
+                "markers": [],
+                "zones": [],
+            },
+            "auto_tracks": {
+                "on_missing": "skip",
+                "max_tracks": 8,
+                "depth_track": {"id": "depth", "title": "Depth", "width_mm": 16},
+                "default_configure": {
+                    "width_mm": 28,
+                    "title_template": "{mnemonic} [{unit}]",
+                    "style": {"color": "#1b5e20"},
+                    "grid": {"major": True, "minor": True},
+                    "scale": {"kind": "auto", "percentile_low": 2, "percentile_high": 98},
+                },
+                "tracks": [],
+            },
+        }
+        savefile_payload = {
+            "template": {"path": "../templates/base.log.yaml"},
+            "version": 1,
+            "name": "From Savefile",
+            "data": {"source_path": "job.las", "source_format": "auto"},
+            "render": {"output_path": "job.pdf", "dpi": 350},
+            "auto_tracks": {
+                "tracks": [
+                    "GR",
+                    {"channel": "RT", "configure": {"style": {"color": "#0d47a1"}}},
+                ]
+            },
+        }
+
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            templates_dir = root / "templates"
+            examples_dir = root / "examples"
+            templates_dir.mkdir(parents=True)
+            examples_dir.mkdir(parents=True)
+            template_path = templates_dir / "base.log.yaml"
+            savefile_path = examples_dir / "job.log.yaml"
+            template_path.write_text(yaml.safe_dump(template_payload), encoding="utf-8")
+            savefile_path.write_text(yaml.safe_dump(savefile_payload), encoding="utf-8")
+
+            spec = load_logfile(savefile_path)
+
+        self.assertEqual(spec.name, "From Savefile")
+        self.assertEqual(spec.render_output_path, "job.pdf")
+        self.assertEqual(spec.render_dpi, 350)
+        self.assertEqual(spec.auto_tracks["tracks"][0]["channel"], "GR")
+        self.assertEqual(spec.auto_tracks["tracks"][0]["configure"]["width_mm"], 28)
+        self.assertEqual(spec.auto_tracks["tracks"][1]["configure"]["style"]["color"], "#0d47a1")
 
 
 if __name__ == "__main__":
