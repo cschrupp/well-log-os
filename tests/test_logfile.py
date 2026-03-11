@@ -466,7 +466,10 @@ class LogFileTests(unittest.TestCase):
             "min": 2,
             "max": 200,
         }
-        payload["document"]["bindings"]["channels"][1]["wrap"] = True
+        payload["document"]["bindings"]["channels"][1]["wrap"] = {
+            "enabled": True,
+            "color": "#ff5500",
+        }
         spec = logfile_from_mapping(payload)
         document = build_document_for_logfile(
             spec,
@@ -476,6 +479,7 @@ class LogFileTests(unittest.TestCase):
         curve = document.tracks[2].elements[0]
         self.assertEqual(curve.scale.kind, ScaleKind.LOG)
         self.assertTrue(curve.wrap)
+        self.assertEqual(curve.wrap_color, "#ff5500")
 
     def test_logfile_parses_track_grid_scale_modes(self) -> None:
         payload = build_mapping()

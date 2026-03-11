@@ -244,7 +244,7 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "label": {"type": "string"},
                 "style": {"$ref": "#/$defs/stylePatch"},
                 "scale": {"$ref": "#/$defs/trackScale"},
-                "wrap": {"type": "boolean"},
+                "wrap": {"$ref": "#/$defs/curveWrap"},
                 "render_mode": {"type": "string", "enum": ["line", "value_labels"]},
                 "value_labels": {"$ref": "#/$defs/curveValueLabels"},
                 "header_display": {"$ref": "#/$defs/curveHeaderDisplay"},
@@ -592,6 +592,19 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "show_limits": {"type": "boolean"},
                 "show_color": {"type": "boolean"},
             },
+        },
+        "curveWrap": {
+            "anyOf": [
+                {"type": "boolean"},
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "color": {"type": "string", "minLength": 1},
+                    },
+                },
+            ]
         },
         "curveValueLabels": {
             "type": "object",

@@ -99,6 +99,27 @@ def _build_scale(data: Mapping[str, Any] | None) -> ScaleSpec | None:
     )
 
 
+def _parse_curve_wrap_config(
+    value: Any,
+    *,
+    context: str,
+) -> tuple[bool, str | None]:
+    if value is None:
+        return False, None
+    if isinstance(value, bool):
+        return value, None
+
+    wrap_data = _ensure_mapping(value, context=context)
+    enabled = bool(wrap_data.get("enabled", True))
+    color = wrap_data.get("color")
+    if color is None:
+        return enabled, None
+    color_text = str(color).strip()
+    if not color_text:
+        raise TemplateValidationError(f"{context}.color must be non-empty when provided.")
+    return enabled, color_text
+
+
 def _parse_grid_scale_kind(value: Any, *, context: str) -> GridScaleKind:
     text = str(value or "linear").strip().lower()
     alias_map = {
@@ -508,13 +529,25 @@ def _build_track(track_data: Mapping[str, Any]) -> TrackSpec:
         element_data = _ensure_mapping(item, context=f"track {track_data.get('id', '')} element")
         element_kind = element_data.get("kind", "curve")
         if element_kind == "curve":
+            wrap_enabled, wrap_color = _parse_curve_wrap_config(
+                element_data.get("wrap"),
+                context=f"track {track_data.get('id', '')} element.wrap",
+            )
+            if "wrap_color" in element_data and element_data["wrap_color"] is not None:
+                wrap_color_text = str(element_data["wrap_color"]).strip()
+                if not wrap_color_text:
+                    raise TemplateValidationError(
+                        f"track {track_data.get('id', '')} element.wrap_color must be non-empty."
+                    )
+                wrap_color = wrap_color_text
             elements.append(
                 CurveElement(
                     channel=str(element_data["channel"]),
                     label=element_data.get("label"),
                     style=_build_style(element_data.get("style")),
                     scale=_build_scale(element_data.get("scale")),
-                    wrap=bool(element_data.get("wrap", False)),
+                    wrap=wrap_enabled,
+                    wrap_color=wrap_color,
                     render_mode=str(element_data.get("render_mode", "line")),
                     value_labels=_build_curve_value_labels(element_data.get("value_labels")),
                     header_display=_build_curve_header_display(element_data.get("header_display")),

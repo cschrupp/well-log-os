@@ -132,4 +132,6 @@ document:
           kind: log
           min: 2
           max: 200
-        wrap: true
+        wrap:
+          enabled: true
+          color: "#ef4444"

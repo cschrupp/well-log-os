@@ -285,6 +285,37 @@ def _validate_document_bindings(
                     raise TemplateValidationError(
                         f"{context}.channels[{index}].header_display.{key} must be boolean."
                     )
+        if "wrap" in channel_cfg:
+            wrap_value = channel_cfg["wrap"]
+            if isinstance(wrap_value, bool):
+                pass
+            else:
+                wrap = _ensure_mapping(wrap_value, context=f"{context}.channels[{index}].wrap")
+                if "enabled" in wrap and not isinstance(wrap["enabled"], bool):
+                    raise TemplateValidationError(
+                        f"{context}.channels[{index}].wrap.enabled must be boolean."
+                    )
+                if "color" in wrap and not str(wrap["color"]).strip():
+                    raise TemplateValidationError(
+                        f"{context}.channels[{index}].wrap.color must be non-empty."
+                    )
+
+
+def _parse_binding_wrap(value: Any, *, context: str) -> tuple[bool, str | None]:
+    if value is None:
+        return False, None
+    if isinstance(value, bool):
+        return value, None
+
+    wrap = _ensure_mapping(value, context=context)
+    enabled = bool(wrap.get("enabled", True))
+    color = wrap.get("color")
+    if color is None:
+        return enabled, None
+    color_text = str(color).strip()
+    if not color_text:
+        raise TemplateValidationError(f"{context}.color must be non-empty.")
+    return enabled, color_text
 
 
 def logfile_from_mapping(data: dict[str, Any]) -> LogFileSpec:
@@ -802,13 +833,20 @@ def _build_tracks_from_layout_bindings(
                 channel.masked_values(),
                 _ensure_mapping(binding.get("scale", {}), context=f"{binding_context}.scale"),
             )
+            wrap_enabled, wrap_color = _parse_binding_wrap(
+                binding.get("wrap"),
+                context=f"{binding_context}.wrap",
+            )
+            wrap_value: bool | dict[str, Any] = wrap_enabled
+            if wrap_color is not None:
+                wrap_value = {"enabled": wrap_enabled, "color": wrap_color}
             element: dict[str, Any] = {
                 "kind": "curve",
                 "channel": channel.mnemonic,
                 "label": str(binding.get("label", channel.mnemonic)),
                 "style": style,
                 "scale": scale,
-                "wrap": bool(binding.get("wrap", False)),
+                "wrap": wrap_value,
                 "render_mode": str(binding.get("render_mode", "line")),
                 "value_labels": deepcopy(
                     _ensure_mapping(

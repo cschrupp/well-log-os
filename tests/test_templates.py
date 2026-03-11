@@ -82,7 +82,7 @@ class TemplateTests(unittest.TestCase):
                                 "kind": "curve",
                                 "channel": "RT",
                                 "scale": {"kind": "log", "min": 2, "max": 200},
-                                "wrap": True,
+                                "wrap": {"enabled": True, "color": "#ff5500"},
                             }
                         ],
                     }
@@ -92,6 +92,7 @@ class TemplateTests(unittest.TestCase):
         element = document.tracks[0].elements[0]
         self.assertIsInstance(element, CurveElement)
         self.assertTrue(element.wrap)
+        self.assertEqual(element.wrap_color, "#ff5500")
 
     def test_reference_track_can_define_layout_axis(self) -> None:
         document = document_from_mapping(

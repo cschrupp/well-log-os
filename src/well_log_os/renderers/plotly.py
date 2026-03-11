@@ -66,29 +66,46 @@ class PlotlyRenderer(Renderer):
                         )
                     curve_scale = element.scale or track.x_scale
                     x_values = channel.masked_values()
-                    if (
-                        curve_scale is not None
-                        and curve_scale.kind == ScaleKind.LOG
-                        and element.wrap
-                    ):
-                        x_values = self._transform_log_wrap_values(x_values, curve_scale)
+                    y_values = channel.depth_in(document.depth_axis.unit, self.registry)
+                    valid_mask = np.isfinite(x_values)
+                    wrapped_mask = np.zeros(x_values.shape, dtype=bool)
+
+                    if curve_scale is not None and element.wrap:
+                        x_values, valid_mask, wrapped_mask = self._transform_wrap_values(
+                            x_values,
+                            curve_scale,
+                        )
+                    elif curve_scale is not None and curve_scale.kind == ScaleKind.LOG:
+                        valid_mask &= x_values > 0
+
                     if curve_scale is not None and curve_scale.kind == ScaleKind.TANGENTIAL:
                         x_values = self._transform_tangential_values(x_values, curve_scale)
-                    figure.add_trace(
-                        go.Scattergl(
-                            x=x_values,
-                            y=channel.depth_in(document.depth_axis.unit, self.registry),
-                            mode="lines",
-                            line={
-                                "color": element.style.color,
-                                "width": element.style.line_width,
-                            },
-                            name=element.label or element.channel,
-                            showlegend=column == 1,
-                        ),
+
+                    self._add_curve_trace(
+                        figure,
                         row=1,
                         col=column,
+                        x_values=x_values,
+                        y_values=y_values,
+                        mask=valid_mask & ~wrapped_mask,
+                        color=element.style.color,
+                        width=element.style.line_width,
+                        name=element.label or element.channel,
+                        showlegend=column == 1,
                     )
+                    if np.any(wrapped_mask):
+                        self._add_curve_trace(
+                            figure,
+                            row=1,
+                            col=column,
+                            x_values=x_values,
+                            y_values=y_values,
+                            mask=valid_mask & wrapped_mask,
+                            color=element.wrap_color or element.style.color,
+                            width=element.style.line_width,
+                            name=element.label or element.channel,
+                            showlegend=False,
+                        )
                     if element.scale is not None:
                         self._update_xaxis(figure, element.scale, row=1, col=column)
                 elif isinstance(element, RasterElement):
@@ -154,22 +171,71 @@ class PlotlyRenderer(Renderer):
         transformed = 0.5 + np.tan((unit - 0.5) * spread) / (2.0 * denominator)
         return np.clip(transformed, 0.0, 1.0)
 
-    def _transform_log_wrap_values(self, values, scale):
+    def _transform_wrap_values(self, values, scale):
         transformed = np.array(values, dtype=float, copy=True)
-        mask = np.isfinite(transformed) & (transformed > 0)
-        if not np.any(mask):
-            return transformed
+        valid_mask = np.isfinite(transformed)
+        wrapped_mask = np.zeros(transformed.shape, dtype=bool)
+
         lower = min(scale.minimum, scale.maximum)
         upper = max(scale.minimum, scale.maximum)
-        if lower <= 0 or upper <= 0 or np.isclose(lower, upper):
-            transformed[mask] = np.nan
-            return transformed
-        low = float(np.log(lower))
-        high = float(np.log(upper))
-        period = high - low
-        if np.isclose(period, 0.0):
-            transformed[mask] = np.nan
-            return transformed
-        wrapped_log = np.mod(np.log(transformed[mask]) - low, period) + low
-        transformed[mask] = np.exp(wrapped_log)
-        return transformed
+        if np.isclose(lower, upper):
+            return transformed, valid_mask & False, wrapped_mask
+
+        if scale.kind == ScaleKind.LOG:
+            valid_mask &= transformed > 0
+            if not np.any(valid_mask):
+                return transformed, valid_mask, wrapped_mask
+            if lower <= 0 or upper <= 0:
+                return transformed, valid_mask & False, wrapped_mask
+            outside = valid_mask & ((transformed < lower) | (transformed > upper))
+            wrapped_mask = outside
+            if np.any(outside):
+                low = float(np.log(lower))
+                high = float(np.log(upper))
+                period = high - low
+                if np.isclose(period, 0.0):
+                    return transformed, valid_mask & False, wrapped_mask & False
+                outside_log = np.log(transformed[outside])
+                wrapped_log = np.mod(outside_log - low, period) + low
+                transformed[outside] = np.exp(wrapped_log)
+            return transformed, valid_mask, wrapped_mask
+
+        outside = valid_mask & ((transformed < lower) | (transformed > upper))
+        wrapped_mask = outside
+        if np.any(outside):
+            period = upper - lower
+            transformed[outside] = np.mod(transformed[outside] - lower, period) + lower
+        return transformed, valid_mask, wrapped_mask
+
+    def _add_curve_trace(
+        self,
+        figure,
+        *,
+        row: int,
+        col: int,
+        x_values,
+        y_values,
+        mask,
+        color: str,
+        width: float,
+        name: str,
+        showlegend: bool,
+    ) -> None:
+        if not np.any(mask):
+            return
+        import plotly.graph_objects as go
+
+        masked_x = np.where(mask, x_values, np.nan)
+        masked_y = np.where(mask, y_values, np.nan)
+        figure.add_trace(
+            go.Scattergl(
+                x=masked_x,
+                y=masked_y,
+                mode="lines",
+                line={"color": color, "width": width},
+                name=name,
+                showlegend=showlegend,
+            ),
+            row=row,
+            col=col,
+        )

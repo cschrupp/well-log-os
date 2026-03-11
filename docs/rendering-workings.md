@@ -246,8 +246,11 @@ document:
         track_id: rt_wrap
         kind: curve
         scale: { kind: log, min: 2, max: 200 }
-        wrap: true
+        wrap:
+          enabled: true
+          color: "#ef4444"
 ```
 
-`wrap: true` folds positive values into the configured log interval and is useful for
-repeat/wrap-style resistivity visualization.
+Wrapping applies to curves in `reference`, `normal`, and `array` tracks.
+It folds out-of-range curve values into the configured scale interval and can
+render wrapped sections in a separate color (`wrap.color`).

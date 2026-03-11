@@ -105,7 +105,9 @@ Behavior:
   `grid.vertical.main.spacing_mode: scale` and `grid.vertical.secondary.spacing_mode: scale`.
   This adapts cycles and spacing for ranges like `2->200` vs `2->2000`, including non-decade starts.
 - Use `spacing_mode: count` when you want fixed/manual line density independent of curve bounds.
-- Curves support `wrap: true` (log scale) to fold values into the configured log interval.
+- Curves support wrapping across curve-capable tracks (`reference`, `normal`, `array`):
+  - `wrap: true` to enable with default curve color.
+  - `wrap: { enabled: true, color: "#ef4444" }` to color wrapped segments explicitly.
 - Multiple curves per track are supported by assigning multiple bindings to the same `track_id`.
 - Section placeholders are first-class in YAML:
   - `document.layout.heading`
