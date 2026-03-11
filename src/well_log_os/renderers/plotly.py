@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
+
 from ..errors import DependencyUnavailableError
 from ..layout import LayoutEngine
 from ..model import (
@@ -62,9 +64,13 @@ class PlotlyRenderer(Renderer):
                         raise TypeError(
                             f"Curve element {element.channel} requires a scalar channel."
                         )
+                    curve_scale = element.scale or track.x_scale
+                    x_values = channel.masked_values()
+                    if curve_scale is not None and curve_scale.kind == ScaleKind.TANGENTIAL:
+                        x_values = self._transform_tangential_values(x_values, curve_scale)
                     figure.add_trace(
                         go.Scattergl(
-                            x=channel.masked_values(),
+                            x=x_values,
                             y=channel.depth_in(document.depth_axis.unit, self.registry),
                             mode="lines",
                             line={
@@ -125,8 +131,19 @@ class PlotlyRenderer(Renderer):
             axis_range = [upper, lower] if scale.reverse else [lower, upper]
             figure.update_xaxes(type="log", range=axis_range, row=row, col=col)
             return
+        if scale.kind == ScaleKind.TANGENTIAL:
+            axis_range = [1.0, 0.0] if scale.reverse else [0.0, 1.0]
+            figure.update_xaxes(type="linear", range=axis_range, row=row, col=col)
+            return
 
         axis_range = (
             [scale.maximum, scale.minimum] if scale.reverse else [scale.minimum, scale.maximum]
         )
         figure.update_xaxes(type="linear", range=axis_range, row=row, col=col)
+
+    def _transform_tangential_values(self, values, scale):
+        spread = 1.2
+        denominator = np.tan(0.5 * spread)
+        unit = (values - scale.minimum) / (scale.maximum - scale.minimum)
+        transformed = 0.5 + np.tan((unit - 0.5) * spread) / (2.0 * denominator)
+        return np.clip(transformed, 0.0, 1.0)

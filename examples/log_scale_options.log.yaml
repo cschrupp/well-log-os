@@ -1,0 +1,136 @@
+template:
+  path: ../templates/wireline_base.template.yaml
+version: 1
+name: Scale Options Showcase
+render:
+  output_path: ../workspace/renders/log_scale_options.pdf
+  dpi: 300
+  continuous_strip_page_height_mm: 297
+document:
+  layout:
+    heading:
+      enabled: true
+    comments: []
+    log_sections:
+      - id: main
+        title: Scale Comparison
+        subtitle: linear vs logarithmic vs tangential
+        data:
+          source_path: ../workspace/data/CBL_Main_REV1.las
+          source_format: las
+        tracks:
+          - id: depth
+            title: Depth
+            kind: reference
+            width_mm: 16
+            position: 1
+            reference:
+              axis: depth
+              define_layout: true
+              unit: m
+              scale_ratio: 200
+              major_step: 50
+              secondary_grid:
+                display: true
+                line_count: 5
+          - id: linear_0_100
+            title: CBL 0-100
+            kind: normal
+            width_mm: 28
+            position: 2
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 4
+                  spacing_mode: count
+                secondary:
+                  scale: linear
+                  line_count: 4
+                  spacing_mode: count
+          - id: log_2_200
+            title: TT 2-200
+            kind: normal
+            width_mm: 28
+            position: 3
+            grid:
+              vertical:
+                main:
+                  scale: logarithmic
+                  spacing_mode: scale
+                secondary:
+                  scale: logarithmic
+                  spacing_mode: scale
+          - id: log_2_2000
+            title: TT 2-2000
+            kind: normal
+            width_mm: 28
+            position: 4
+            grid:
+              vertical:
+                main:
+                  scale: logarithmic
+                  spacing_mode: scale
+                secondary:
+                  scale: logarithmic
+                  spacing_mode: scale
+          - id: tangential_0_5000
+            title: BI 0-5000
+            kind: normal
+            width_mm: 28
+            position: 5
+            grid:
+              vertical:
+                main:
+                  scale: tangential
+                  line_count: 4
+                  spacing_mode: count
+                secondary:
+                  scale: tangential
+                  line_count: 4
+                  spacing_mode: count
+    tail:
+      enabled: true
+  bindings:
+    on_missing: skip
+    channels:
+      - section: main
+        channel: CBL
+        track_id: linear_0_100
+        kind: curve
+        style:
+          color: "#1f2937"
+        scale:
+          kind: linear
+          min: 0
+          max: 100
+      - section: main
+        channel: TT
+        track_id: log_2_200
+        kind: curve
+        style:
+          color: "#1d4ed8"
+        scale:
+          kind: log
+          min: 2
+          max: 200
+      - section: main
+        channel: TT
+        track_id: log_2_2000
+        kind: curve
+        style:
+          color: "#b91c1c"
+        scale:
+          kind: log
+          min: 2
+          max: 2000
+      - section: main
+        channel: BI
+        track_id: tangential_0_5000
+        kind: curve
+        style:
+          color: "#92400e"
+        scale:
+          kind: tangential
+          min: 0
+          max: 5000

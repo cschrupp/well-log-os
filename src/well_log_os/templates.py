@@ -13,6 +13,9 @@ from .model import (
     CurveValueLabelsSpec,
     DepthAxisSpec,
     FooterSpec,
+    GridDisplayMode,
+    GridScaleKind,
+    GridSpacingMode,
     GridSpec,
     HeaderField,
     HeaderSpec,
@@ -82,13 +85,195 @@ def _build_scale(data: Mapping[str, Any] | None) -> ScaleSpec | None:
     if not data:
         return None
     scale_data = dict(data)
-    kind = ScaleKind(scale_data.get("kind", "linear"))
+    kind_raw = str(scale_data.get("kind", "linear")).strip().lower()
+    if kind_raw == "logarithmic":
+        kind_raw = "log"
+    if kind_raw == "tangent":
+        kind_raw = "tangential"
+    kind = ScaleKind(kind_raw)
     return ScaleSpec(
         kind=kind,
         minimum=float(scale_data.get("min", scale_data.get("minimum", 0.0))),
         maximum=float(scale_data.get("max", scale_data.get("maximum", 1.0))),
         reverse=bool(scale_data.get("reverse", False)),
     )
+
+
+def _parse_grid_scale_kind(value: Any, *, context: str) -> GridScaleKind:
+    text = str(value or "linear").strip().lower()
+    alias_map = {
+        "linear": GridScaleKind.LINEAR,
+        "log": GridScaleKind.LOGARITHMIC,
+        "logarithmic": GridScaleKind.LOGARITHMIC,
+        "exponential": GridScaleKind.LOGARITHMIC,
+        "tangent": GridScaleKind.TANGENTIAL,
+        "tangential": GridScaleKind.TANGENTIAL,
+    }
+    kind = alias_map.get(text)
+    if kind is None:
+        raise TemplateValidationError(
+            f"{context} must be linear, logarithmic/exponential, or tangential."
+        )
+    return kind
+
+
+def _parse_grid_display_mode(
+    value: Any,
+    *,
+    context: str,
+    default: GridDisplayMode = GridDisplayMode.BELOW,
+) -> GridDisplayMode:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return GridDisplayMode.BELOW if value else GridDisplayMode.NONE
+    text = str(value).strip().lower()
+    alias_map = {
+        "below": GridDisplayMode.BELOW,
+        "under": GridDisplayMode.BELOW,
+        "above": GridDisplayMode.ABOVE,
+        "over": GridDisplayMode.ABOVE,
+        "none": GridDisplayMode.NONE,
+        "off": GridDisplayMode.NONE,
+        "hidden": GridDisplayMode.NONE,
+        "false": GridDisplayMode.NONE,
+    }
+    mode = alias_map.get(text)
+    if mode is None:
+        raise TemplateValidationError(f"{context} must be below, above, or none.")
+    return mode
+
+
+def _build_grid_spec(data: Any, *, context: str) -> GridSpec:
+    grid_data = _ensure_mapping(data or {}, context=f"{context}.grid")
+    horizontal_data = _ensure_mapping(
+        grid_data.get("horizontal", {}),
+        context=f"{context}.grid.horizontal",
+    )
+    vertical_data = _ensure_mapping(
+        grid_data.get("vertical", {}),
+        context=f"{context}.grid.vertical",
+    )
+    horizontal_main = _ensure_mapping(
+        horizontal_data.get("main", {}),
+        context=f"{context}.grid.horizontal.main",
+    )
+    horizontal_secondary = _ensure_mapping(
+        horizontal_data.get("secondary", {}),
+        context=f"{context}.grid.horizontal.secondary",
+    )
+    vertical_main = _ensure_mapping(
+        vertical_data.get("main", {}),
+        context=f"{context}.grid.vertical.main",
+    )
+    vertical_secondary = _ensure_mapping(
+        vertical_data.get("secondary", {}),
+        context=f"{context}.grid.vertical.secondary",
+    )
+
+    def _parse_spacing_mode(value: Any, *, field_context: str) -> GridSpacingMode:
+        text = str(value or "count").strip().lower()
+        alias_map = {
+            "count": GridSpacingMode.COUNT,
+            "manual": GridSpacingMode.COUNT,
+            "scale": GridSpacingMode.SCALE,
+            "auto": GridSpacingMode.SCALE,
+        }
+        mode = alias_map.get(text)
+        if mode is None:
+            raise TemplateValidationError(f"{field_context} must be count/manual or scale/auto.")
+        return mode
+
+    major_visible = bool(horizontal_main.get("visible", grid_data.get("major", True)))
+    minor_visible = bool(horizontal_secondary.get("visible", grid_data.get("minor", True)))
+    major_alpha = float(grid_data.get("major_alpha", 0.35))
+    minor_alpha = float(grid_data.get("minor_alpha", 0.15))
+
+    global_display_raw = grid_data.get("display")
+    global_display = _parse_grid_display_mode(
+        global_display_raw,
+        context=f"{context}.grid.display",
+    )
+    horizontal_display = _parse_grid_display_mode(
+        horizontal_data.get("display", global_display),
+        context=f"{context}.grid.horizontal.display",
+    )
+    vertical_display = _parse_grid_display_mode(
+        vertical_data.get("display", global_display),
+        context=f"{context}.grid.vertical.display",
+    )
+
+    horizontal_major_thickness = (
+        float(horizontal_main["thickness"]) if "thickness" in horizontal_main else None
+    )
+    horizontal_minor_thickness = (
+        float(horizontal_secondary["thickness"]) if "thickness" in horizontal_secondary else None
+    )
+    horizontal_major_color = str(horizontal_main["color"]) if "color" in horizontal_main else None
+    horizontal_minor_color = (
+        str(horizontal_secondary["color"]) if "color" in horizontal_secondary else None
+    )
+    horizontal_major_alpha = float(horizontal_main.get("alpha", major_alpha))
+    horizontal_minor_alpha = float(horizontal_secondary.get("alpha", minor_alpha))
+
+    vertical_main_thickness = (
+        float(vertical_main["thickness"]) if "thickness" in vertical_main else None
+    )
+    vertical_secondary_thickness = (
+        float(vertical_secondary["thickness"]) if "thickness" in vertical_secondary else None
+    )
+    vertical_main_color = str(vertical_main["color"]) if "color" in vertical_main else None
+    vertical_secondary_color = (
+        str(vertical_secondary["color"]) if "color" in vertical_secondary else None
+    )
+    vertical_main_alpha = float(vertical_main.get("alpha", major_alpha))
+    vertical_secondary_alpha = float(vertical_secondary.get("alpha", minor_alpha))
+
+    try:
+        return GridSpec(
+            major=major_visible,
+            minor=minor_visible,
+            major_alpha=major_alpha,
+            minor_alpha=minor_alpha,
+            horizontal_display=horizontal_display,
+            horizontal_major_visible=major_visible,
+            horizontal_minor_visible=minor_visible,
+            horizontal_major_color=horizontal_major_color,
+            horizontal_minor_color=horizontal_minor_color,
+            horizontal_major_thickness=horizontal_major_thickness,
+            horizontal_minor_thickness=horizontal_minor_thickness,
+            horizontal_major_alpha=horizontal_major_alpha,
+            horizontal_minor_alpha=horizontal_minor_alpha,
+            vertical_display=vertical_display,
+            vertical_main_visible=bool(vertical_main.get("visible", major_visible)),
+            vertical_main_line_count=int(vertical_main.get("line_count", 4)),
+            vertical_main_thickness=vertical_main_thickness,
+            vertical_main_color=vertical_main_color,
+            vertical_main_alpha=vertical_main_alpha,
+            vertical_main_scale=_parse_grid_scale_kind(
+                vertical_main.get("scale", "linear"),
+                context=f"{context}.grid.vertical.main.scale",
+            ),
+            vertical_main_spacing_mode=_parse_spacing_mode(
+                vertical_main.get("spacing_mode", "count"),
+                field_context=f"{context}.grid.vertical.main.spacing_mode",
+            ),
+            vertical_secondary_visible=bool(vertical_secondary.get("visible", minor_visible)),
+            vertical_secondary_line_count=int(vertical_secondary.get("line_count", 4)),
+            vertical_secondary_thickness=vertical_secondary_thickness,
+            vertical_secondary_color=vertical_secondary_color,
+            vertical_secondary_alpha=vertical_secondary_alpha,
+            vertical_secondary_scale=_parse_grid_scale_kind(
+                vertical_secondary.get("scale", "linear"),
+                context=f"{context}.grid.vertical.secondary.scale",
+            ),
+            vertical_secondary_spacing_mode=_parse_spacing_mode(
+                vertical_secondary.get("spacing_mode", "count"),
+                field_context=f"{context}.grid.vertical.secondary.spacing_mode",
+            ),
+        )
+    except (TypeError, ValueError) as exc:
+        raise TemplateValidationError("Invalid track grid configuration.") from exc
 
 
 def _parse_track_kind(raw_kind: Any) -> TrackKind:
@@ -353,9 +538,7 @@ def _build_track(track_data: Mapping[str, Any]) -> TrackSpec:
             )
         else:
             raise TemplateValidationError(f"Unsupported element kind {element_kind!r}.")
-    grid_data = _ensure_mapping(
-        track_data.get("grid", {}), context=f"track {track_data.get('id', '')} grid"
-    )
+    track_context = f"track {track_data.get('id', '')}"
     reference = (
         _build_reference_track(track_data.get("reference")) if kind == TrackKind.REFERENCE else None
     )
@@ -367,12 +550,7 @@ def _build_track(track_data: Mapping[str, Any]) -> TrackSpec:
         elements=tuple(elements),
         x_scale=_build_scale(track_data.get("x_scale")),
         header=_build_track_header(track_data.get("track_header")),
-        grid=GridSpec(
-            major=bool(grid_data.get("major", True)),
-            minor=bool(grid_data.get("minor", True)),
-            major_alpha=float(grid_data.get("major_alpha", 0.35)),
-            minor_alpha=float(grid_data.get("minor_alpha", 0.15)),
-        ),
+        grid=_build_grid_spec(track_data.get("grid"), context=track_context),
         reference=reference,
     )
 

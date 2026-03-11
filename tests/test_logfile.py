@@ -16,7 +16,7 @@ from well_log_os.logfile import (
     load_logfile,
     logfile_from_mapping,
 )
-from well_log_os.model import ScalarChannel, WellDataset
+from well_log_os.model import GridScaleKind, ScalarChannel, ScaleKind, WellDataset
 
 
 def build_mapping() -> dict:
@@ -321,6 +321,51 @@ class LogFileTests(unittest.TestCase):
             Path("/tmp/project/repeat.las").resolve(),
         )
 
+    @patch("well_log_os.logfile.load_las")
+    def test_load_datasets_for_logfile_supports_section_first_sources(self, mock_load_las) -> None:
+        payload = build_mapping()
+        payload.pop("data")
+        payload["document"]["layout"]["log_sections"] = [
+            {
+                "id": "main",
+                "data": {"source_path": "main.las", "source_format": "las"},
+                "tracks": [
+                    {"id": "depth_main", "title": "Depth", "kind": "reference", "width_mm": 16}
+                ],
+            },
+            {
+                "id": "repeat",
+                "data": {"source_path": "repeat.las", "source_format": "las"},
+                "tracks": [
+                    {"id": "depth_repeat", "title": "Depth", "kind": "reference", "width_mm": 16}
+                ],
+            },
+        ]
+        spec = logfile_from_mapping(payload)
+        dataset_main = WellDataset(name="main")
+        dataset_repeat = WellDataset(name="repeat")
+        mock_load_las.side_effect = [dataset_main, dataset_repeat]
+
+        datasets_by_section, source_paths_by_section = load_datasets_for_logfile(
+            spec,
+            base_dir=Path("/tmp/project"),
+        )
+
+        self.assertEqual(datasets_by_section["main"], dataset_main)
+        self.assertEqual(datasets_by_section["repeat"], dataset_repeat)
+        self.assertEqual(source_paths_by_section["main"], Path("/tmp/project/main.las").resolve())
+        self.assertEqual(
+            source_paths_by_section["repeat"],
+            Path("/tmp/project/repeat.las").resolve(),
+        )
+
+    def test_missing_data_sources_raise_when_root_data_absent(self) -> None:
+        payload = build_mapping()
+        payload.pop("data")
+        spec = logfile_from_mapping(payload)
+        with self.assertRaises(TemplateValidationError):
+            load_datasets_for_logfile(spec)
+
     def test_invalid_logfile_configuration_raises(self) -> None:
         payload = build_mapping()
         del payload["document"]["bindings"]["channels"][0]["track_id"]
@@ -413,6 +458,40 @@ class LogFileTests(unittest.TestCase):
         curve = document.tracks[0].elements[0]
         self.assertEqual(curve.render_mode, "value_labels")
         self.assertEqual(curve.value_labels.step, 5.0)
+
+    def test_logfile_parses_track_grid_scale_modes(self) -> None:
+        payload = build_mapping()
+        payload["document"]["layout"]["log_sections"][0]["tracks"][0]["grid"] = {
+            "vertical": {
+                "main": {"line_count": 4, "scale": "exponential"},
+                "secondary": {"line_count": 3, "scale": "tangential"},
+            }
+        }
+        spec = logfile_from_mapping(payload)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("example_input.las"),
+        )
+        grid = document.tracks[0].grid
+        self.assertEqual(grid.vertical_main_scale, GridScaleKind.LOGARITHMIC)
+        self.assertEqual(grid.vertical_secondary_scale, GridScaleKind.TANGENTIAL)
+
+    def test_logfile_parses_tangential_curve_scale_kind(self) -> None:
+        payload = build_mapping()
+        payload["document"]["bindings"]["channels"][0]["scale"] = {
+            "kind": "tangential",
+            "min": 0,
+            "max": 150,
+        }
+        spec = logfile_from_mapping(payload)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("example_input.las"),
+        )
+        curve = document.tracks[0].elements[0]
+        self.assertEqual(curve.scale.kind, ScaleKind.TANGENTIAL)
 
     def test_binding_can_configure_curve_header_display(self) -> None:
         payload = build_mapping()

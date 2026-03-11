@@ -23,6 +23,24 @@ class TrackKind(StrEnum):
 class ScaleKind(StrEnum):
     LINEAR = "linear"
     LOG = "log"
+    TANGENTIAL = "tangential"
+
+
+class GridScaleKind(StrEnum):
+    LINEAR = "linear"
+    LOGARITHMIC = "logarithmic"
+    TANGENTIAL = "tangential"
+
+
+class GridDisplayMode(StrEnum):
+    BELOW = "below"
+    ABOVE = "above"
+    NONE = "none"
+
+
+class GridSpacingMode(StrEnum):
+    COUNT = "count"
+    SCALE = "scale"
 
 
 class TrackHeaderObjectKind(StrEnum):
@@ -75,6 +93,62 @@ class GridSpec:
     minor: bool = True
     major_alpha: float = 0.35
     minor_alpha: float = 0.15
+    horizontal_display: GridDisplayMode = GridDisplayMode.BELOW
+    horizontal_major_visible: bool = True
+    horizontal_minor_visible: bool = True
+    horizontal_major_color: str | None = None
+    horizontal_minor_color: str | None = None
+    horizontal_major_thickness: float | None = None
+    horizontal_minor_thickness: float | None = None
+    horizontal_major_alpha: float | None = None
+    horizontal_minor_alpha: float | None = None
+    vertical_display: GridDisplayMode = GridDisplayMode.BELOW
+    vertical_main_visible: bool = True
+    vertical_main_line_count: int = 4
+    vertical_main_thickness: float | None = None
+    vertical_main_color: str | None = None
+    vertical_main_alpha: float = 0.35
+    vertical_main_scale: GridScaleKind = GridScaleKind.LINEAR
+    vertical_main_spacing_mode: GridSpacingMode = GridSpacingMode.COUNT
+    vertical_secondary_visible: bool = True
+    vertical_secondary_line_count: int = 4
+    vertical_secondary_thickness: float | None = None
+    vertical_secondary_color: str | None = None
+    vertical_secondary_alpha: float = 0.15
+    vertical_secondary_scale: GridScaleKind = GridScaleKind.LINEAR
+    vertical_secondary_spacing_mode: GridSpacingMode = GridSpacingMode.COUNT
+
+    def __post_init__(self) -> None:
+        for name, alpha in (
+            ("major_alpha", self.major_alpha),
+            ("minor_alpha", self.minor_alpha),
+            ("horizontal_major_alpha", self.horizontal_major_alpha),
+            ("horizontal_minor_alpha", self.horizontal_minor_alpha),
+            ("vertical_main_alpha", self.vertical_main_alpha),
+            ("vertical_secondary_alpha", self.vertical_secondary_alpha),
+        ):
+            if alpha is None:
+                continue
+            if alpha < 0 or alpha > 1:
+                raise ValueError(f"Grid {name} must be between 0 and 1.")
+
+        for name, thickness in (
+            ("horizontal_major_thickness", self.horizontal_major_thickness),
+            ("horizontal_minor_thickness", self.horizontal_minor_thickness),
+        ):
+            if thickness is None:
+                continue
+            if thickness <= 0:
+                raise ValueError(f"Grid {name} must be positive when provided.")
+
+        if self.vertical_main_line_count <= 0:
+            raise ValueError("Grid vertical_main_line_count must be positive.")
+        if self.vertical_secondary_line_count <= 0:
+            raise ValueError("Grid vertical_secondary_line_count must be positive.")
+        if self.vertical_main_thickness is not None and self.vertical_main_thickness <= 0:
+            raise ValueError("Grid vertical_main_thickness must be positive when provided.")
+        if self.vertical_secondary_thickness is not None and self.vertical_secondary_thickness <= 0:
+            raise ValueError("Grid vertical_secondary_thickness must be positive when provided.")
 
 
 @dataclass(slots=True)

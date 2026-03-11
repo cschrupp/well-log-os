@@ -73,6 +73,7 @@ track:
   frame_color: "#2f2f2f"
   frame_linewidth: 0.8
   marker_linewidth: 0.6
+  tangential_spread: 1.2
   reference_grid_mode: edge_ticks
   reference_major_tick_length_ratio: 0.12
   reference_minor_tick_length_ratio: 0.07

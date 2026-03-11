@@ -74,6 +74,7 @@ uv run ruff check .
 ## Example Template
 
 See [examples/triple_combo.yaml](examples/triple_combo.yaml).
+For scale/grid behavior examples, see [examples/log_scale_options.log.yaml](examples/log_scale_options.log.yaml).
 
 ## Template + Savefile Model
 
@@ -94,7 +95,14 @@ template:
 Behavior:
 - Savefile values override template values.
 - Tracks are defined in `document.layout.log_sections[*].tracks`.
+- Data sources are section-scoped via `document.layout.log_sections[*].data`.
+  If top-level `data` is provided, it acts as a default for sections that do not set one.
 - Channels are assigned in `document.bindings.channels` (`channel` + `track_id`).
+- Curve scales support `linear`, `log`/`logarithmic`, and `tangential`.
+- For log tracks, vertical grid can auto-follow scale bounds with:
+  `grid.vertical.main.spacing_mode: scale` and `grid.vertical.secondary.spacing_mode: scale`.
+  This adapts cycles and spacing for ranges like `2->200` vs `2->2000`, including non-decade starts.
+- Use `spacing_mode: count` when you want fixed/manual line density independent of curve bounds.
 - Multiple curves per track are supported by assigning multiple bindings to the same `track_id`.
 - Section placeholders are first-class in YAML:
   - `document.layout.heading`

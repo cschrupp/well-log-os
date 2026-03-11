@@ -37,7 +37,7 @@ Decision history is tracked in `docs/decision-log.md`.
   - `layout.comments`
   - `layout.log_sections`
   - `layout.tail`
-- Log sections can override data source independently with:
+- Data source routing is section-first with optional root fallback:
   - `layout.log_sections[*].data.source_path`
   - `layout.log_sections[*].data.source_format`
 

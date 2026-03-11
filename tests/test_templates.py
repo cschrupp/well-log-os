@@ -5,8 +5,12 @@ import unittest
 from well_log_os.errors import TemplateValidationError
 from well_log_os.model import (
     CurveElement,
+    GridDisplayMode,
+    GridScaleKind,
+    GridSpacingMode,
     NumberFormatKind,
     RasterElement,
+    ScaleKind,
     TrackHeaderObjectKind,
     TrackKind,
 )
@@ -252,6 +256,90 @@ class TemplateTests(unittest.TestCase):
         self.assertTrue(objects[1].reserve_space)
         self.assertEqual(objects[2].line_units, 2)
         self.assertEqual(objects[3].kind, TrackHeaderObjectKind.DIVISIONS)
+
+    def test_track_grid_parses_vertical_and_horizontal_properties(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "grid options",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "gr",
+                        "title": "GR",
+                        "kind": "curve",
+                        "width_mm": 30,
+                        "grid": {
+                            "display": "below",
+                            "horizontal": {
+                                "display": "above",
+                                "main": {"visible": True, "thickness": 0.8, "color": "#111111"},
+                                "secondary": {"visible": False},
+                            },
+                            "vertical": {
+                                "display": "below",
+                                "main": {
+                                    "visible": True,
+                                    "line_count": 4,
+                                    "thickness": 0.7,
+                                    "color": "#222222",
+                                    "scale": "exponential",
+                                    "spacing_mode": "scale",
+                                },
+                                "secondary": {
+                                    "visible": True,
+                                    "line_count": 3,
+                                    "thickness": 0.4,
+                                    "scale": "tangential",
+                                    "spacing_mode": "count",
+                                },
+                            },
+                        },
+                        "elements": [{"kind": "curve", "channel": "GR"}],
+                    }
+                ],
+            }
+        )
+        grid = document.tracks[0].grid
+        self.assertEqual(grid.horizontal_display, GridDisplayMode.ABOVE)
+        self.assertTrue(grid.horizontal_major_visible)
+        self.assertFalse(grid.horizontal_minor_visible)
+        self.assertAlmostEqual(grid.horizontal_major_thickness or 0.0, 0.8)
+        self.assertEqual(grid.vertical_display, GridDisplayMode.BELOW)
+        self.assertEqual(grid.vertical_main_line_count, 4)
+        self.assertEqual(grid.vertical_secondary_line_count, 3)
+        self.assertEqual(grid.vertical_main_scale, GridScaleKind.LOGARITHMIC)
+        self.assertEqual(grid.vertical_secondary_scale, GridScaleKind.TANGENTIAL)
+        self.assertEqual(grid.vertical_main_spacing_mode, GridSpacingMode.SCALE)
+        self.assertEqual(grid.vertical_secondary_spacing_mode, GridSpacingMode.COUNT)
+
+    def test_curve_scale_parses_tangential_alias(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "tangential curve",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "gr",
+                        "title": "GR",
+                        "kind": "curve",
+                        "width_mm": 30,
+                        "elements": [
+                            {
+                                "kind": "curve",
+                                "channel": "GR",
+                                "scale": {"kind": "tangent", "min": 0, "max": 150},
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        element = document.tracks[0].elements[0]
+        self.assertIsInstance(element, CurveElement)
+        assert element.scale is not None
+        self.assertEqual(element.scale.kind, ScaleKind.TANGENTIAL)
 
     def test_invalid_track_header_configuration_raises_template_error(self) -> None:
         with self.assertRaises(TemplateValidationError):

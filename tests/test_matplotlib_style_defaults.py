@@ -9,6 +9,7 @@ import numpy as np
 from well_log_os import (
     CurveElement,
     CurveHeaderDisplaySpec,
+    GridScaleKind,
     ScalarChannel,
     ScaleKind,
     ScaleSpec,
@@ -190,6 +191,76 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
         self.assertEqual(right, "15000")
         self.assertEqual(renderer._curve_header_label(element), "")
         self.assertEqual(renderer._curve_header_color(element), "#111111")
+
+    def test_grid_segment_positions_support_scale_modes(self) -> None:
+        renderer = MatplotlibRenderer()
+        linear = renderer._grid_segment_positions(4, GridScaleKind.LINEAR)
+        logarithmic = renderer._grid_segment_positions(4, GridScaleKind.LOGARITHMIC)
+        tangential = renderer._grid_segment_positions(4, GridScaleKind.TANGENTIAL)
+
+        self.assertTrue(np.all(np.diff(linear) > 0))
+        self.assertTrue(np.all(np.diff(logarithmic) > 0))
+        self.assertTrue(np.all(np.diff(tangential) > 0))
+        self.assertAlmostEqual(float(linear[0]), 0.0)
+        self.assertAlmostEqual(float(linear[-1]), 1.0)
+        self.assertAlmostEqual(float(logarithmic[0]), 0.0)
+        self.assertAlmostEqual(float(logarithmic[-1]), 1.0)
+        self.assertAlmostEqual(float(tangential[0]), 0.0)
+        self.assertAlmostEqual(float(tangential[-1]), 1.0)
+        self.assertFalse(np.allclose(linear, logarithmic))
+        self.assertFalse(np.allclose(linear, tangential))
+
+    def test_normalize_curve_values_supports_tangential_scale(self) -> None:
+        renderer = MatplotlibRenderer()
+        values = np.array([0.0, 25.0, 50.0, 100.0, 150.0], dtype=float)
+        normalized, mask = renderer._normalize_curve_values(
+            values,
+            ScaleSpec(kind=ScaleKind.TANGENTIAL, minimum=0.0, maximum=150.0),
+        )
+        self.assertTrue(np.all(mask))
+        self.assertGreaterEqual(float(np.nanmin(normalized[mask])), 0.0)
+        self.assertLessEqual(float(np.nanmax(normalized[mask])), 1.0)
+        self.assertTrue(np.all(np.diff(normalized[mask]) > 0))
+
+    def test_log_grid_scale_mode_auto_uses_cycles_from_scale_bounds(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "log cycles",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "rt",
+                        "title": "RT",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "x_scale": {"kind": "log", "min": 2, "max": 2000},
+                        "grid": {
+                            "vertical": {
+                                "main": {"scale": "logarithmic", "spacing_mode": "scale"},
+                                "secondary": {"scale": "logarithmic", "spacing_mode": "scale"},
+                            }
+                        },
+                        "elements": [{"kind": "curve", "channel": "RT"}],
+                    }
+                ],
+            }
+        )
+        depth = np.array([1000.0, 1001.0, 1002.0])
+        dataset = WellDataset(name="sample")
+        dataset.add_channel(
+            ScalarChannel(
+                "RT",
+                depth,
+                "m",
+                "ohm.m",
+                values=np.array([2.0, 20.0, 2000.0]),
+            )
+        )
+        renderer = MatplotlibRenderer()
+        main_lines, secondary_lines = renderer._vertical_grid_fractions(document.tracks[0], dataset)
+        self.assertEqual(len(main_lines), 3)
+        self.assertGreater(len(secondary_lines), 3)
 
     def test_render_documents_auto_uses_strip_pages_for_multisection_pdf(self) -> None:
         document = document_from_mapping(

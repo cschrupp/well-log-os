@@ -42,8 +42,8 @@ Track assembly is track-first:
 - `document.layout.log_sections[*].tracks` defines the physical layout.
 - `document.bindings.channels` assigns dataset channels into those tracks.
 - Data-source routing:
-  - root `data` is the default source for all sections
-  - each section can override source with `document.layout.log_sections[*].data`
+  - each section can define source with `document.layout.log_sections[*].data`
+  - root `data` is optional and acts as default only when section data is omitted
   - section data block supports `source_path` and optional `source_format` (`auto|las|dlis`)
 - Multi-section binding routing:
   - if `binding.section` is set, binding is applied to that section only
@@ -168,6 +168,7 @@ Track-header legend space auto-fits to curve count:
 - multi-curve headers render per-curve blocks (name row + scale row) with curve-colored separators
 - each curve can control header visibility via `document.bindings.channels[*].header_display`:
   - `show_name`, `show_unit`, `show_limits`, `show_color`
+- curve `scale.kind` supports `linear`, `log`/`logarithmic`, and `tangential`
 - in paired mode, each curve is ordered as `name` then `scale` immediately below.
 - paired-mode spacing can be tuned with `render.matplotlib.style.track_header.paired_scale_text_offset_ratio`.
 - track-header title alignment is configurable with `render.matplotlib.style.track_header.title_align` and `title_x`.
@@ -177,3 +178,60 @@ Track-header legend space auto-fits to curve count:
   - `title` (required to render the section banner)
   - `subtitle` (optional)
 - section banners are drawn as full-width boxed titles across the track span.
+
+## 10) Track Grid Modes
+
+Track grids can now be configured per track with horizontal/vertical blocks:
+
+- `tracks[*].grid.horizontal`
+- `tracks[*].grid.vertical`
+
+Vertical grid scales support:
+
+- `linear`
+- `logarithmic` (aliases: `log`, `exponential`)
+- `tangential` (alias: `tangent`)
+
+Main and secondary vertical grids can each set:
+
+- `visible`
+- `line_count`
+- `thickness`
+- `color`
+- `alpha`
+- `scale`
+- `spacing_mode` (`count`/`manual` or `scale`/`auto`)
+
+For log curves, `spacing_mode: scale` + `scale: logarithmic` derives vertical grid cycles from the
+actual scale bounds (for example `2->200` vs `2->2000`), including start-value effects (`1` vs `2`).
+
+Recommended patterns:
+
+```yaml
+# Auto from scale bounds (recommended for log tracks)
+grid:
+  vertical:
+    main:
+      scale: logarithmic
+      spacing_mode: scale
+    secondary:
+      scale: logarithmic
+      spacing_mode: scale
+```
+
+```yaml
+# Fixed/manual density (same line count regardless of min/max)
+grid:
+  vertical:
+    main:
+      scale: logarithmic
+      line_count: 4
+      spacing_mode: count
+    secondary:
+      scale: logarithmic
+      line_count: 4
+      spacing_mode: count
+```
+
+See [examples/log_scale_options.log.yaml](../examples/log_scale_options.log.yaml) for a
+real-data 4-track comparison (`0-100` linear, `2-200` log, `2-2000` log, and tangential).

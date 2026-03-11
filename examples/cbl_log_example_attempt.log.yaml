@@ -2,9 +2,6 @@ template:
   path: ../templates/wireline_base.template.yaml
 version: 1
 name: CBL Log Example Attempt
-data:
-  source_path: ../workspace/data/CBL_Main_REV1.las
-  source_format: las
 render:
   output_path: ../workspace/renders/CBL_log_attempt.pdf
   dpi: 300
@@ -18,12 +15,23 @@ document:
       - id: main
         title: Main Log
         subtitle: CBL Service
+        data:
+          source_path: ../workspace/data/CBL_Main_REV1.las
+          source_format: las
         tracks:
           - id: combo_gr_tt
             title: GR_STGC / TT
             kind: normal
             width_mm: 28
             position: 1
+            grid:
+              vertical:
+                main:
+                  line_count: 4
+                  scale: linear
+                secondary:
+                  line_count: 4
+                  scale: linear
           - id: depth
             title: Depth
             kind: reference
@@ -43,6 +51,16 @@ document:
             kind: normal
             width_mm: 28
             position: 3
+            grid:
+              vertical:
+                main:
+                  line_count: 4
+                  scale: exponential
+                  spacing_mode: scale
+                secondary:
+                  line_count: 4
+                  scale: exponential
+                  spacing_mode: scale
             track_header:
               objects:
                 - kind: title
@@ -63,6 +81,96 @@ document:
             kind: normal
             width_mm: 28
             position: 4
+            grid:
+              vertical:
+                main:
+                  line_count: 4
+                  scale: tangential
+                secondary:
+                  line_count: 4
+                  scale: tangential
+          - id: mtem
+            title: MTEM
+            kind: normal
+            width_mm: 28
+            position: 5
+      - id: repeat
+        title: Repeat Log
+        subtitle: CBL Repeat
+        data:
+          source_path: ../workspace/data/CBL_Repeat_REV1.las
+          source_format: las
+        tracks:
+          - id: combo_gr_tt
+            title: GR_STGC / TT
+            kind: normal
+            width_mm: 28
+            position: 1
+            grid:
+              vertical:
+                main:
+                  line_count: 4
+                  scale: linear
+                secondary:
+                  line_count: 4
+                  scale: linear
+          - id: depth
+            title: Depth
+            kind: reference
+            width_mm: 16
+            position: 2
+            reference:
+              axis: depth
+              define_layout: true
+              unit: m
+              scale_ratio: 200
+              major_step: 50
+              secondary_grid:
+                display: true
+                line_count: 5
+          - id: cbl
+            title: CBL [MV]
+            kind: normal
+            width_mm: 28
+            position: 3
+            grid:
+              vertical:
+                main:
+                  line_count: 4
+                  scale: exponential
+                  spacing_mode: scale
+                secondary:
+                  line_count: 4
+                  scale: exponential
+                  spacing_mode: scale
+            track_header:
+              objects:
+                - kind: title
+                  enabled: true
+                  line_units: 1
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: true
+                  reserve_space: true
+                  line_units: 1
+          - id: bi
+            title: BI
+            kind: normal
+            width_mm: 28
+            position: 4
+            grid:
+              vertical:
+                main:
+                  line_count: 4
+                  scale: tangential
+                secondary:
+                  line_count: 4
+                  scale: tangential
           - id: mtem
             title: MTEM
             kind: normal
@@ -73,7 +181,8 @@ document:
   bindings:
     on_missing: skip
     channels:
-      - channel: GR_STGC
+      - section: main
+        channel: GR_STGC
         track_id: combo_gr_tt
         kind: curve
         style:
@@ -89,7 +198,8 @@ document:
           precision: 1
           font_size: 6.0
           horizontal_alignment: center
-      - channel: TT
+      - section: main
+        channel: TT
         track_id: combo_gr_tt
         kind: curve
         style:
@@ -99,7 +209,8 @@ document:
           min: 400
           max: 200
           reverse: true
-      - channel: CBL
+      - section: main
+        channel: CBL
         track_id: cbl
         kind: curve
         style:
@@ -108,13 +219,50 @@ document:
           kind: linear
           min: 0
           max: 100
-      - channel: BI
+      - section: main
+        channel: BI
         track_id: bi
         kind: curve
         style:
           color: "#8d6e63"
-      - channel: MTEM
+        scale:
+          kind: tangential
+          min: 0
+          max: 5000
+      - section: main
+        channel: MTEM
         track_id: mtem
         kind: curve
         style:
           color: "#111827"
+      - section: repeat
+        channel: GR_STGC
+        track_id: combo_gr_tt
+        kind: curve
+        style:
+          color: "#2e7d32"
+        scale:
+          kind: linear
+          min: 0
+          max: 150
+      - section: repeat
+        channel: TT
+        track_id: combo_gr_tt
+        kind: curve
+        style:
+          color: "#1e40af"
+        scale:
+          kind: linear
+          min: 400
+          max: 200
+          reverse: true
+      - section: repeat
+        channel: CBL
+        track_id: cbl
+        kind: curve
+        style:
+          color: "#424242"
+        scale:
+          kind: linear
+          min: 0
+          max: 100

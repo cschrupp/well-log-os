@@ -11,7 +11,7 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "well_log_os Logfile",
     "type": "object",
-    "required": ["version", "name", "data", "render", "document"],
+    "required": ["version", "name", "render", "document"],
     "additionalProperties": False,
     "properties": {
         "version": {"type": "integer", "const": 1},
@@ -374,6 +374,7 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "frame_color": {"type": "string", "minLength": 1},
                 "frame_linewidth": {"type": "number", "exclusiveMinimum": 0},
                 "marker_linewidth": {"type": "number", "exclusiveMinimum": 0},
+                "tangential_spread": {"type": "number", "exclusiveMinimum": 0},
                 "reference_grid_mode": {
                     "type": "string",
                     "enum": ["full", "edge_ticks"],
@@ -495,17 +496,72 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
             "type": "object",
             "additionalProperties": False,
             "properties": {
+                "display": {"$ref": "#/$defs/gridDisplayMode"},
                 "major": {"type": "boolean"},
                 "minor": {"type": "boolean"},
                 "major_alpha": {"type": "number", "minimum": 0, "maximum": 1},
                 "minor_alpha": {"type": "number", "minimum": 0, "maximum": 1},
+                "horizontal": {"$ref": "#/$defs/horizontalGrid"},
+                "vertical": {"$ref": "#/$defs/verticalGrid"},
+            },
+        },
+        "gridDisplayMode": {
+            "type": ["string", "boolean"],
+            "enum": ["below", "above", "none", True, False],
+        },
+        "gridScaleKind": {
+            "type": "string",
+            "enum": ["linear", "logarithmic", "log", "exponential", "tangential", "tangent"],
+        },
+        "horizontalGridLine": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "visible": {"type": "boolean"},
+                "color": {"type": "string", "minLength": 1},
+                "thickness": {"type": "number", "exclusiveMinimum": 0},
+                "alpha": {"type": "number", "minimum": 0, "maximum": 1},
+            },
+        },
+        "horizontalGrid": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "display": {"$ref": "#/$defs/gridDisplayMode"},
+                "main": {"$ref": "#/$defs/horizontalGridLine"},
+                "secondary": {"$ref": "#/$defs/horizontalGridLine"},
+            },
+        },
+        "verticalGridLine": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "visible": {"type": "boolean"},
+                "line_count": {"type": "integer", "minimum": 1},
+                "thickness": {"type": "number", "exclusiveMinimum": 0},
+                "color": {"type": "string", "minLength": 1},
+                "alpha": {"type": "number", "minimum": 0, "maximum": 1},
+                "scale": {"$ref": "#/$defs/gridScaleKind"},
+                "spacing_mode": {"type": "string", "enum": ["count", "manual", "scale", "auto"]},
+            },
+        },
+        "verticalGrid": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "display": {"$ref": "#/$defs/gridDisplayMode"},
+                "main": {"$ref": "#/$defs/verticalGridLine"},
+                "secondary": {"$ref": "#/$defs/verticalGridLine"},
             },
         },
         "trackScale": {
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "kind": {"type": "string", "enum": ["auto", "linear", "log"]},
+                "kind": {
+                    "type": "string",
+                    "enum": ["auto", "linear", "log", "logarithmic", "tangential", "tangent"],
+                },
                 "min": {"type": "number"},
                 "max": {"type": "number"},
                 "reverse": {"type": "boolean"},

@@ -2,9 +2,6 @@ template:
   path: ../templates/wireline_base.template.yaml
 version: 1
 name: CBL Main Configuration
-data:
-  source_path: ../workspace/data/CBL_Main_REV1.las
-  source_format: auto
 render:
   output_path: ../workspace/renders/CBL_Main_REV1_render.pdf
   dpi: 300
@@ -20,6 +17,9 @@ document:
       - id: main
         title: Main Log
         subtitle: CBL Main Configuration
+        data:
+          source_path: ../workspace/data/CBL_Main_REV1.las
+          source_format: auto
         tracks:
           - id: depth
             title: Depth

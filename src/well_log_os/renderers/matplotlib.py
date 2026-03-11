@@ -14,6 +14,9 @@ from ..layout import LayoutEngine
 from ..model import (
     CurveElement,
     FooterSpec,
+    GridDisplayMode,
+    GridScaleKind,
+    GridSpacingMode,
     HeaderSpec,
     LogDocument,
     NumberFormatKind,
@@ -420,9 +423,7 @@ class MatplotlibRenderer(Renderer):
         else:
             normalized_datasets = tuple(dataset)
             if len(normalized_datasets) != len(normalized_documents):
-                raise ValueError(
-                    "render_documents requires one dataset per document."
-                )
+                raise ValueError("render_documents requires one dataset per document.")
         document_dataset_pairs = tuple(zip(normalized_documents, normalized_datasets, strict=True))
         return self._render_documents(document_dataset_pairs, output_path=output_path)
 
@@ -1033,12 +1034,21 @@ class MatplotlibRenderer(Renderer):
             if left <= 0 or right <= 0:
                 return
             tick_values = np.geomspace(left, right, tick_count)
+            left_log = np.log10(left)
+            right_log = np.log10(right)
+            if np.isclose(left_log, right_log):
+                return
+            tick_fractions = (np.log10(tick_values) - left_log) / (right_log - left_log)
+        elif scale_kind == ScaleKind.TANGENTIAL:
+            tick_values = np.linspace(left, right, tick_count)
+            tick_fractions = self._grid_segment_positions(tick_count - 1, GridScaleKind.TANGENTIAL)
         else:
             tick_values = np.linspace(left, right, tick_count)
+            tick_fractions = np.linspace(0.0, 1.0, tick_count)
 
         left_x = float(track_header_style["scale_left_x"])
         right_x = float(track_header_style["scale_right_x"])
-        tick_x = np.linspace(left_x, right_x, tick_count)
+        tick_x = left_x + (right_x - left_x) * tick_fractions
 
         slot_height = slot_top - slot_bottom
         axis_y = slot_bottom + slot_height * float(track_header_style["division_axis_y_ratio"])
@@ -1271,9 +1281,264 @@ class MatplotlibRenderer(Renderer):
                 clip_on=True,
             )
 
+    def _grid_zorder(self, mode: GridDisplayMode) -> float:
+        if mode == GridDisplayMode.ABOVE:
+            return 3.0
+        return 0.25
+
+    def _grid_segment_positions(self, line_count: int, scale: GridScaleKind) -> np.ndarray:
+        points = np.linspace(0.0, 1.0, max(line_count, 1) + 1)
+        if scale == GridScaleKind.LINEAR:
+            return points
+        if scale == GridScaleKind.LOGARITHMIC:
+            factor = 3.0
+            return np.expm1(factor * points) / np.expm1(factor)
+        spread = 1.2
+        denominator = np.tan(0.5 * spread)
+        return 0.5 + np.tan((points - 0.5) * spread) / (2.0 * denominator)
+
+    def _log_scale_grid_fractions(
+        self,
+        track,
+        dataset: WellDataset,
+    ) -> tuple[list[float], list[float]] | None:
+        reference = self._header_division_scale(track, dataset)
+        if reference is None:
+            return None
+        left, right, scale_kind = reference
+        if scale_kind != ScaleKind.LOG:
+            return None
+        low = min(left, right)
+        high = max(left, right)
+        if low <= 0 or high <= 0 or np.isclose(low, high):
+            return None
+        reverse = left > right
+        low_log = float(np.log10(low))
+        high_log = float(np.log10(high))
+        if np.isclose(low_log, high_log):
+            return None
+
+        min_decade = int(np.floor(low_log))
+        max_decade = int(np.ceil(high_log))
+        major_values: list[float] = []
+        minor_values: list[float] = []
+        for decade in range(min_decade, max_decade + 1):
+            decade_base = 10.0**decade
+            major_values.append(decade_base)
+            for multiplier in range(2, 10):
+                minor_values.append(multiplier * decade_base)
+
+        def _to_fractions(values: list[float]) -> list[float]:
+            fractions: list[float] = []
+            for value in values:
+                if value <= low or value >= high:
+                    continue
+                fraction = (np.log10(value) - low_log) / (high_log - low_log)
+                normalized = float(1.0 - fraction) if reverse else float(fraction)
+                if 1e-6 < normalized < 1 - 1e-6:
+                    fractions.append(normalized)
+            return fractions
+
+        return _to_fractions(major_values), _to_fractions(minor_values)
+
+    def _vertical_grid_fractions(
+        self, track, dataset: WellDataset
+    ) -> tuple[list[float], list[float]]:
+        main_points = self._grid_segment_positions(
+            track.grid.vertical_main_line_count,
+            track.grid.vertical_main_scale,
+        )
+        main_lines = [float(value) for value in main_points[1:-1]]
+
+        secondary_lines: list[float] = []
+        if track.grid.vertical_secondary_line_count > 1:
+            secondary_points = self._grid_segment_positions(
+                track.grid.vertical_secondary_line_count,
+                track.grid.vertical_secondary_scale,
+            )[1:-1]
+            for start, stop in zip(main_points[:-1], main_points[1:], strict=True):
+                segment = stop - start
+                for fraction in secondary_points:
+                    secondary_lines.append(float(start + segment * fraction))
+
+        def _dedupe(values: list[float], *, blocked: list[float]) -> list[float]:
+            deduped: list[float] = []
+            for value in values:
+                if value <= 1e-6 or value >= 1 - 1e-6:
+                    continue
+                if any(np.isclose(value, item, atol=1e-6) for item in blocked):
+                    continue
+                if any(np.isclose(value, item, atol=1e-6) for item in deduped):
+                    continue
+                deduped.append(value)
+            return deduped
+
+        log_fractions = self._log_scale_grid_fractions(track, dataset)
+        if log_fractions is not None:
+            major_log, minor_log = log_fractions
+            if (
+                track.grid.vertical_main_spacing_mode == GridSpacingMode.SCALE
+                and track.grid.vertical_main_scale == GridScaleKind.LOGARITHMIC
+            ):
+                main_lines = major_log
+            if (
+                track.grid.vertical_secondary_spacing_mode == GridSpacingMode.SCALE
+                and track.grid.vertical_secondary_scale == GridScaleKind.LOGARITHMIC
+            ):
+                secondary_lines = minor_log
+
+        return _dedupe(main_lines, blocked=[]), _dedupe(secondary_lines, blocked=main_lines)
+
+    def _draw_vertical_grid_lines(self, ax, track, window, dataset: WellDataset) -> None:
+        from matplotlib.transforms import blended_transform_factory
+
+        if track.grid.vertical_display == GridDisplayMode.NONE:
+            return
+
+        x_limits = ax.get_xlim()
+        reverse_axis = x_limits[0] > x_limits[1]
+        main_lines, secondary_lines = self._vertical_grid_fractions(track, dataset)
+        if reverse_axis:
+            main_lines = [1.0 - value for value in main_lines]
+            secondary_lines = [1.0 - value for value in secondary_lines]
+
+        transform = blended_transform_factory(ax.transAxes, ax.transData)
+        y_top = float(window.start)
+        y_base = float(window.stop)
+        zorder = self._grid_zorder(track.grid.vertical_display)
+        grid_style = self._style_section("grid")
+
+        if track.grid.vertical_secondary_visible:
+            secondary_color = track.grid.vertical_secondary_color or str(
+                grid_style["depth_minor_color"]
+            )
+            secondary_linewidth = (
+                track.grid.vertical_secondary_thickness
+                if track.grid.vertical_secondary_thickness is not None
+                else float(grid_style["x_minor_linewidth"])
+            )
+            for fraction in secondary_lines:
+                ax.plot(
+                    [fraction, fraction],
+                    [y_top, y_base],
+                    transform=transform,
+                    color=secondary_color,
+                    linewidth=secondary_linewidth,
+                    alpha=track.grid.vertical_secondary_alpha,
+                    zorder=zorder,
+                    clip_on=True,
+                )
+
+        if track.grid.vertical_main_visible:
+            main_color = track.grid.vertical_main_color or str(grid_style["depth_major_color"])
+            main_linewidth = (
+                track.grid.vertical_main_thickness
+                if track.grid.vertical_main_thickness is not None
+                else float(grid_style["x_major_linewidth"])
+            )
+            for fraction in main_lines:
+                ax.plot(
+                    [fraction, fraction],
+                    [y_top, y_base],
+                    transform=transform,
+                    color=main_color,
+                    linewidth=main_linewidth,
+                    alpha=track.grid.vertical_main_alpha,
+                    zorder=zorder,
+                    clip_on=True,
+                )
+
+    def _draw_horizontal_grid_lines(
+        self,
+        ax,
+        track,
+        window,
+        *,
+        major_step: float,
+        minor_step: float,
+        draw_minor: bool,
+    ) -> None:
+        from matplotlib.transforms import blended_transform_factory
+
+        if track.grid.horizontal_display == GridDisplayMode.NONE:
+            return
+
+        transform = blended_transform_factory(ax.transAxes, ax.transData)
+        zorder = self._grid_zorder(track.grid.horizontal_display)
+        grid_style = self._style_section("grid")
+        y_top = float(window.start)
+        y_base = float(window.stop)
+
+        def _depth_values(step: float) -> list[float]:
+            start = np.floor(y_top / step) * step
+            epsilon = max(abs(step) * 1e-6, 1e-8)
+            values: list[float] = []
+            value = start
+            while value <= y_base + epsilon:
+                if value >= y_top - epsilon:
+                    values.append(float(value))
+                value += step
+            return values
+
+        if (
+            track.grid.horizontal_minor_visible
+            and track.grid.minor
+            and draw_minor
+            and minor_step > 0
+        ):
+            minor_color = track.grid.horizontal_minor_color or str(grid_style["depth_minor_color"])
+            minor_linewidth = (
+                track.grid.horizontal_minor_thickness
+                if track.grid.horizontal_minor_thickness is not None
+                else float(grid_style["depth_minor_linewidth"])
+            )
+            minor_alpha = (
+                track.grid.horizontal_minor_alpha
+                if track.grid.horizontal_minor_alpha is not None
+                else float(grid_style["depth_minor_alpha"])
+            )
+            major_multiple = max(round(major_step / minor_step), 1)
+            for value in _depth_values(minor_step):
+                tick_index = round(value / minor_step)
+                if tick_index % major_multiple == 0:
+                    continue
+                ax.plot(
+                    [0.0, 1.0],
+                    [value, value],
+                    transform=transform,
+                    color=minor_color,
+                    linewidth=minor_linewidth,
+                    alpha=minor_alpha,
+                    zorder=zorder,
+                    clip_on=True,
+                )
+
+        if track.grid.horizontal_major_visible and track.grid.major and major_step > 0:
+            major_color = track.grid.horizontal_major_color or str(grid_style["depth_major_color"])
+            major_linewidth = (
+                track.grid.horizontal_major_thickness
+                if track.grid.horizontal_major_thickness is not None
+                else float(grid_style["depth_major_linewidth"])
+            )
+            major_alpha = (
+                track.grid.horizontal_major_alpha
+                if track.grid.horizontal_major_alpha is not None
+                else float(grid_style["depth_major_alpha"])
+            )
+            for value in _depth_values(major_step):
+                ax.plot(
+                    [0.0, 1.0],
+                    [value, value],
+                    transform=transform,
+                    color=major_color,
+                    linewidth=major_linewidth,
+                    alpha=major_alpha,
+                    zorder=zorder,
+                    clip_on=True,
+                )
+
     def _draw_track(self, ax, track, document, dataset, page_layout) -> None:
         track_style = self._style_section("track")
-        grid_style = self._style_section("grid")
         is_reference_track = self._is_reference_track(track)
         window = page_layout.depth_window
         ax.set_ylim(window.stop, window.start)
@@ -1302,7 +1567,14 @@ class MatplotlibRenderer(Renderer):
                 draw_minor=draw_minor_grid,
             )
         else:
-            self._draw_depth_grid(ax, show_minor=draw_minor_grid)
+            self._draw_horizontal_grid_lines(
+                ax,
+                track,
+                window,
+                major_step=major_step,
+                minor_step=minor_step,
+                draw_minor=draw_minor_grid,
+            )
 
         for zone in document.zones:
             if zone.base < window.start or zone.top > window.stop:
@@ -1330,20 +1602,7 @@ class MatplotlibRenderer(Renderer):
                         self._draw_raster(ax, track, element, document, dataset)
                 self._configure_x_axis(ax, track)
                 self._apply_scale(ax, track)
-                ax.grid(
-                    track.grid.major,
-                    axis="x",
-                    which="major",
-                    alpha=track.grid.major_alpha,
-                    linewidth=float(grid_style["x_major_linewidth"]),
-                )
-                ax.grid(
-                    track.grid.minor,
-                    axis="x",
-                    which="minor",
-                    alpha=track.grid.minor_alpha,
-                    linewidth=float(grid_style["x_minor_linewidth"]),
-                )
+                self._draw_vertical_grid_lines(ax, track, window, dataset)
                 ax.tick_params(
                     axis="x",
                     which="both",
@@ -1392,20 +1651,7 @@ class MatplotlibRenderer(Renderer):
         else:
             self._configure_x_axis(ax, track)
             self._apply_scale(ax, track)
-        ax.grid(
-            track.grid.major,
-            axis="x",
-            which="major",
-            alpha=track.grid.major_alpha,
-            linewidth=float(grid_style["x_major_linewidth"]),
-        )
-        ax.grid(
-            track.grid.minor,
-            axis="x",
-            which="minor",
-            alpha=track.grid.minor_alpha,
-            linewidth=float(grid_style["x_minor_linewidth"]),
-        )
+        self._draw_vertical_grid_lines(ax, track, window, dataset)
         if independent_curve_scales:
             ax.tick_params(
                 axis="x",
@@ -1439,6 +1685,14 @@ class MatplotlibRenderer(Renderer):
         ax.xaxis.set_major_locator(mticker.MultipleLocator(0.2))
         ax.xaxis.set_minor_locator(mticker.MultipleLocator(0.1))
 
+    def _tangential_transform_values(self, values: np.ndarray, scale) -> np.ndarray:
+        spread = float(self._style_section("track").get("tangential_spread", 1.2))
+        spread = min(max(spread, 0.05), 2.6)
+        denominator = np.tan(0.5 * spread)
+        unit = (values - scale.minimum) / (scale.maximum - scale.minimum)
+        transformed = 0.5 + np.tan((unit - 0.5) * spread) / (2.0 * denominator)
+        return np.clip(transformed, 0.0, 1.0)
+
     def _normalize_curve_values(self, values: np.ndarray, scale) -> tuple[np.ndarray, np.ndarray]:
         mask = np.isfinite(values)
         normalized = np.full(values.shape, np.nan, dtype=float)
@@ -1468,6 +1722,15 @@ class MatplotlibRenderer(Renderer):
             normalized[positive_mask] = np.clip(scaled, 0.0, 1.0)
             return normalized, positive_mask
 
+        if scale.kind == ScaleKind.TANGENTIAL:
+            if np.isclose(scale.minimum, scale.maximum):
+                return normalized, mask & False
+            scaled = self._tangential_transform_values(values[mask], scale)
+            if scale.reverse:
+                scaled = 1.0 - scaled
+            normalized[mask] = scaled
+            return normalized, mask
+
         if np.isclose(scale.minimum, scale.maximum):
             return normalized, mask & False
         scaled = (values[mask] - scale.minimum) / (scale.maximum - scale.minimum)
@@ -1492,6 +1755,33 @@ class MatplotlibRenderer(Renderer):
         depth = channel.depth_in(document.depth_axis.unit, self.registry)
         values = channel.masked_values()
         scale = element.scale or track.x_scale
+
+        if scale is not None and scale.kind == ScaleKind.TANGENTIAL:
+            normalized_values, value_mask = self._normalize_curve_values(values, scale)
+            if element.render_mode == "value_labels":
+                self._draw_curve_value_labels(
+                    ax,
+                    depth,
+                    normalized_values,
+                    element,
+                    scale,
+                    text_values=values,
+                    value_mask=value_mask,
+                )
+            else:
+                ax.plot(
+                    normalized_values[value_mask],
+                    depth[value_mask],
+                    color=element.style.color,
+                    linewidth=element.style.line_width,
+                    linestyle=element.style.line_style,
+                    alpha=element.style.opacity,
+                )
+            if scale.reverse:
+                ax.set_xlim(1.0, 0.0)
+            else:
+                ax.set_xlim(0.0, 1.0)
+            return
 
         if independent_curve_scales:
             normalized_values, value_mask = self._normalize_curve_values(values, scale)
@@ -1641,6 +1931,18 @@ class MatplotlibRenderer(Renderer):
         scale = track.x_scale
         if scale.kind == ScaleKind.LOG:
             ax.set_xscale("log")
+            if scale.reverse:
+                ax.set_xlim(scale.maximum, scale.minimum)
+            else:
+                ax.set_xlim(scale.minimum, scale.maximum)
+            return
+        if scale.kind == ScaleKind.TANGENTIAL:
+            ax.set_xscale("linear")
+            if scale.reverse:
+                ax.set_xlim(1.0, 0.0)
+            else:
+                ax.set_xlim(0.0, 1.0)
+            return
         if scale.reverse:
             ax.set_xlim(scale.maximum, scale.minimum)
         else:
@@ -1678,6 +1980,11 @@ class MatplotlibRenderer(Renderer):
             ax.set_xscale("log")
             ax.xaxis.set_minor_locator(mticker.LogLocator(base=10.0, subs=np.arange(2, 10) * 0.1))
             ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+            return
+        if track.x_scale is not None and track.x_scale.kind == ScaleKind.TANGENTIAL:
+            ax.set_xscale("linear")
+            ax.xaxis.set_major_locator(mticker.MultipleLocator(0.2))
+            ax.xaxis.set_minor_locator(mticker.MultipleLocator(0.1))
             return
 
         ax.xaxis.set_minor_locator(mticker.AutoMinorLocator())

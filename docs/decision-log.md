@@ -35,6 +35,9 @@ This file records project decisions that should remain stable unless explicitly 
 - Log-file YAML is validated with a JSON Schema before parsing/building.
 - CLI includes a dedicated `validate` command for logfile preflight checks.
 - Log-file configs support YAML template inheritance (`template.path`) plus savefile overrides.
+- Data-source ownership is section-first:
+  - preferred source location is `document.layout.log_sections[*].data`
+  - top-level `data` is optional default/fallback
 - Track header data is modeled as typed objects (`title`, `scale`, `legend`), not ad-hoc text.
 - Track header objects support:
   - `enabled` to show/hide content

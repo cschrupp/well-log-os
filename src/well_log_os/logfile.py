@@ -18,7 +18,7 @@ from .templates import document_from_mapping
 @dataclass(slots=True, frozen=True)
 class LogFileSpec:
     name: str
-    data_source_path: str
+    data_source_path: str | None
     data_source_format: str
     render_backend: str
     render_output_path: str
@@ -47,9 +47,7 @@ def _ensure_sequence(value: Any, *, context: str) -> list[Any]:
 def _normalized_source_format(value: Any, *, context: str) -> str:
     source_format = str(value).strip().lower()
     if source_format not in {"auto", "las", "dlis"}:
-        raise TemplateValidationError(
-            f"{context} must be one of: auto, las, dlis."
-        )
+        raise TemplateValidationError(f"{context} must be one of: auto, las, dlis.")
     return source_format
 
 
@@ -296,12 +294,19 @@ def logfile_from_mapping(data: dict[str, Any]) -> LogFileSpec:
         _ = int(root["version"])
         name = str(root["name"])
 
-        data_section = _ensure_mapping(root["data"], context="data")
-        data_source_path = str(data_section["source_path"])
-        data_source_format = _normalized_source_format(
-            data_section.get("source_format", "auto"),
-            context="data.source_format",
-        )
+        data_source_path: str | None = None
+        data_source_format = "auto"
+        data_section_value = root.get("data")
+        if data_section_value is not None:
+            data_section = _ensure_mapping(data_section_value, context="data")
+            source_path = data_section.get("source_path")
+            if not isinstance(source_path, str) or not source_path.strip():
+                raise TemplateValidationError("data.source_path must be a non-empty string.")
+            data_source_path = source_path
+            data_source_format = _normalized_source_format(
+                data_section.get("source_format", "auto"),
+                context="data.source_format",
+            )
 
         render_section = _ensure_mapping(root["render"], context="render")
         render_backend = str(render_section.get("backend", "matplotlib")).strip().lower()
@@ -433,15 +438,16 @@ def _section_data_sources_for_logfile(
     sections = _layout_sections(layout, context="document.layout.log_sections")
 
     default_path = spec.data_source_path
-    default_format = _normalized_source_format(
-        spec.data_source_format,
-        context="data.source_format",
+    default_format = (
+        _normalized_source_format(spec.data_source_format, context="data.source_format")
+        if default_path is not None
+        else "auto"
     )
     section_sources: dict[str, tuple[str, str]] = {}
     for index, section in enumerate(sections):
         section_id = str(section["id"])
-        source_path = default_path
-        source_format = default_format
+        source_path: str
+        source_format: str
         if "data" in section:
             section_data = _ensure_mapping(
                 section["data"],
@@ -451,6 +457,14 @@ def _section_data_sources_for_logfile(
             source_format = _normalized_source_format(
                 section_data.get("source_format", "auto"),
                 context=f"document.layout.log_sections[{index}].data.source_format",
+            )
+        elif default_path is not None:
+            source_path = default_path
+            source_format = default_format
+        else:
+            raise TemplateValidationError(
+                "Each document.layout.log_sections[*] must define data.source_path "
+                "when top-level data.source_path is not set."
             )
         section_sources[section_id] = (source_path, source_format)
     return section_sources
@@ -492,9 +506,24 @@ def load_datasets_for_logfile(
 def load_dataset_for_logfile(
     spec: LogFileSpec, *, base_dir: Path | None = None
 ) -> tuple[WellDataset, Path]:
+    if spec.data_source_path is not None:
+        return _load_dataset_from_source(
+            spec.data_source_path,
+            spec.data_source_format,
+            base_dir=base_dir,
+        )
+
+    section_sources = _section_data_sources_for_logfile(spec)
+    unique_sources = {source for source in section_sources.values()}
+    if len(unique_sources) != 1:
+        raise TemplateValidationError(
+            "This logfile defines section-specific data sources. "
+            "Use load_datasets_for_logfile(...) instead."
+        )
+    source_path, source_format = next(iter(unique_sources))
     return _load_dataset_from_source(
-        spec.data_source_path,
-        spec.data_source_format,
+        source_path,
+        source_format,
         base_dir=base_dir,
     )
 
@@ -508,10 +537,16 @@ def _build_scale(values: np.ndarray, scale_cfg: dict[str, Any] | None) -> dict[s
                 "Track scale requires both min and max when fixed bounds are used."
             )
         kind = str(cfg.get("kind", "linear")).strip().lower()
+        if kind == "logarithmic":
+            kind = "log"
+        if kind == "tangent":
+            kind = "tangential"
         if kind == "auto":
             kind = "linear"
-        if kind not in {"linear", "log"}:
-            raise TemplateValidationError("Track scale kind must be linear, log, or auto.")
+        if kind not in {"linear", "log", "tangential"}:
+            raise TemplateValidationError(
+                "Track scale kind must be linear, log, tangential, or auto."
+            )
         scale: dict[str, Any] = {
             "kind": kind,
             "min": float(cfg["min"]),
@@ -539,12 +574,18 @@ def _build_scale(values: np.ndarray, scale_cfg: dict[str, Any] | None) -> dict[s
         upper += pad
 
     requested_kind = str(cfg.get("kind", "auto")).strip().lower()
-    if requested_kind not in {"auto", "linear", "log"}:
-        raise TemplateValidationError("Track scale kind must be auto, linear, or log.")
+    if requested_kind == "logarithmic":
+        requested_kind = "log"
+    if requested_kind == "tangent":
+        requested_kind = "tangential"
+    if requested_kind not in {"auto", "linear", "log", "tangential"}:
+        raise TemplateValidationError("Track scale kind must be auto, linear, log, or tangential.")
 
     scale_kind = "linear"
     if requested_kind == "log":
         scale_kind = "log"
+    elif requested_kind == "tangential":
+        scale_kind = "tangential"
     elif requested_kind == "auto":
         if lower > 0 and upper / max(lower, min_positive) >= ratio_threshold:
             scale_kind = "log"
@@ -615,9 +656,7 @@ def _layout_sections(layout: dict[str, Any], *, context: str) -> list[dict[str, 
         section = _ensure_mapping(item, context=f"{context}[{index}]")
         section_id = str(section["id"])
         if section_id in seen_section_ids:
-            raise TemplateValidationError(
-                f"{context}[{index}].id {section_id!r} must be unique."
-            )
+            raise TemplateValidationError(f"{context}[{index}].id {section_id!r} must be unique.")
         seen_section_ids.add(section_id)
         sections.append(section)
     return sections
@@ -733,9 +772,7 @@ def _build_tracks_from_layout_bindings(
         track = section_track_maps[section_id][track_id]
         by_upper = channels_by_section_upper.get(section_id)
         if by_upper is None:
-            raise TemplateValidationError(
-                f"Missing dataset for section {section_id!r}."
-            )
+            raise TemplateValidationError(f"Missing dataset for section {section_id!r}.")
 
         channel_name = str(binding["channel"])
         channel = by_upper.get(channel_name.upper())
