@@ -16,7 +16,7 @@ from well_log_os.logfile import (
     load_logfile,
     logfile_from_mapping,
 )
-from well_log_os.model import GridScaleKind, ScalarChannel, ScaleKind, WellDataset
+from well_log_os.model import GridScaleKind, RasterChannel, ScalarChannel, ScaleKind, WellDataset
 
 
 def build_mapping() -> dict:
@@ -103,6 +103,8 @@ def build_mapping() -> dict:
 class LogFileTests(unittest.TestCase):
     def build_dataset(self) -> WellDataset:
         depth = np.linspace(1000.0, 1020.0, 50)
+        sample_axis = np.linspace(0.0, 360.0, 36)
+        raster_values = np.sin(depth[:, None] / 8.0) * np.cos(np.deg2rad(sample_axis))[None, :]
         dataset = WellDataset(name="sample", well_metadata={"WELL": "TEST-1"})
         dataset.add_channel(
             ScalarChannel("GR", depth, "m", "gAPI", values=np.linspace(20, 120, depth.size))
@@ -110,6 +112,18 @@ class LogFileTests(unittest.TestCase):
         dataset.add_channel(
             ScalarChannel(
                 "RT", depth, "m", "ohm.m", values=np.exp(np.linspace(0.1, 5.0, depth.size))
+            )
+        )
+        dataset.add_channel(
+            RasterChannel(
+                "VDL",
+                depth,
+                "m",
+                "amplitude",
+                values=raster_values,
+                sample_axis=sample_axis,
+                sample_unit="deg",
+                sample_label="azimuth",
             )
         )
         return dataset
@@ -480,6 +494,103 @@ class LogFileTests(unittest.TestCase):
         self.assertEqual(curve.scale.kind, ScaleKind.LOG)
         self.assertTrue(curve.wrap)
         self.assertEqual(curve.wrap_color, "#ff5500")
+
+    def test_raster_binding_parses_array_display_options(self) -> None:
+        payload = build_mapping()
+        payload["document"]["layout"]["log_sections"][0]["tracks"][2]["kind"] = "array"
+        payload["document"]["bindings"]["channels"] = [
+            {
+                "channel": "VDL",
+                "track_id": "rt",
+                "kind": "raster",
+                "label": "VDL VariableDensity",
+                "profile": "vdl",
+                "normalization": "trace_maxabs",
+                "waveform_normalization": "trace_maxabs",
+                "clip_percentiles": [1, 99],
+                "show_raster": True,
+                "raster_alpha": 0.45,
+                "style": {"colormap": "bone"},
+                "color_limits": [-1.0, 1.0],
+                "colorbar": {"enabled": True, "label": "VDL amp", "position": "header"},
+                "sample_axis": {
+                    "enabled": True,
+                    "label": "Azimuth (deg)",
+                    "unit": "deg",
+                    "ticks": 7,
+                    "min": 200,
+                    "max": 1200,
+                },
+                "waveform": {
+                    "enabled": True,
+                    "stride": 5,
+                    "amplitude_scale": 0.45,
+                    "color": "#663399",
+                    "line_width": 0.22,
+                    "fill": True,
+                    "positive_fill_color": "#000000",
+                    "negative_fill_color": "#ffffff",
+                    "invert_fill_polarity": False,
+                    "max_traces": 250,
+                },
+            }
+        ]
+        spec = logfile_from_mapping(payload)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("example_input.las"),
+        )
+        raster = document.tracks[2].elements[0]
+        self.assertEqual(raster.label, "VDL VariableDensity")
+        self.assertEqual(raster.profile, "vdl")
+        self.assertEqual(raster.normalization, "trace_maxabs")
+        self.assertEqual(raster.waveform_normalization, "trace_maxabs")
+        self.assertEqual(raster.clip_percentiles, (1.0, 99.0))
+        self.assertTrue(raster.show_raster)
+        self.assertEqual(raster.raster_alpha, 0.45)
+        self.assertTrue(raster.colorbar_enabled)
+        self.assertEqual(raster.colorbar_label, "VDL amp")
+        self.assertEqual(raster.colorbar_position, "header")
+        self.assertTrue(raster.sample_axis_enabled)
+        self.assertEqual(raster.sample_axis_label, "Azimuth (deg)")
+        self.assertEqual(raster.sample_axis_unit, "deg")
+        self.assertEqual(raster.sample_axis_tick_count, 7)
+        self.assertEqual(raster.sample_axis_min, 200.0)
+        self.assertEqual(raster.sample_axis_max, 1200.0)
+        self.assertTrue(raster.waveform.enabled)
+        self.assertEqual(raster.waveform.stride, 5)
+        self.assertEqual(raster.waveform.amplitude_scale, 0.45)
+        self.assertEqual(raster.waveform.color, "#663399")
+        self.assertEqual(raster.waveform.line_width, 0.22)
+        self.assertTrue(raster.waveform.fill)
+        self.assertEqual(raster.waveform.positive_fill_color, "#000000")
+        self.assertEqual(raster.waveform.negative_fill_color, "#ffffff")
+        self.assertFalse(raster.waveform.invert_fill_polarity)
+        self.assertEqual(raster.waveform.max_traces, 250)
+        self.assertEqual(raster.color_limits, (-1.0, 1.0))
+
+    def test_waveform_profile_defaults_to_waveform_only_mode(self) -> None:
+        payload = build_mapping()
+        payload["document"]["layout"]["log_sections"][0]["tracks"][2]["kind"] = "array"
+        payload["document"]["bindings"]["channels"] = [
+            {
+                "channel": "VDL",
+                "track_id": "rt",
+                "kind": "raster",
+                "profile": "waveform",
+            }
+        ]
+        spec = logfile_from_mapping(payload)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("example_input.las"),
+        )
+        raster = document.tracks[2].elements[0]
+        self.assertEqual(raster.profile, "waveform")
+        self.assertFalse(raster.show_raster)
+        self.assertTrue(raster.waveform.enabled)
 
     def test_logfile_parses_track_grid_scale_modes(self) -> None:
         payload = build_mapping()

@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import yaml
 
 from .errors import TemplateValidationError
@@ -23,7 +24,11 @@ from .model import (
     MarkerSpec,
     NumberFormatKind,
     PageSpec,
+    RasterColorbarPosition,
     RasterElement,
+    RasterNormalizationKind,
+    RasterProfileKind,
+    RasterWaveformSpec,
     ReferenceAxisKind,
     ReferenceTrackSpec,
     ScaleKind,
@@ -118,6 +123,101 @@ def _parse_curve_wrap_config(
     if not color_text:
         raise TemplateValidationError(f"{context}.color must be non-empty when provided.")
     return enabled, color_text
+
+
+def _parse_raster_colorbar_config(
+    value: Any,
+    *,
+    context: str,
+) -> tuple[bool, str | None, RasterColorbarPosition]:
+    if value is None:
+        return False, None, RasterColorbarPosition.RIGHT
+    if isinstance(value, bool):
+        return value, None, RasterColorbarPosition.RIGHT
+
+    colorbar = _ensure_mapping(value, context=context)
+    enabled = bool(colorbar.get("enabled", True))
+    position_text = str(colorbar.get("position", "right")).strip().lower()
+    if position_text not in {"right", "header"}:
+        raise TemplateValidationError(f"{context}.position must be right or header.")
+    label = colorbar.get("label")
+    if label is None:
+        return enabled, None, RasterColorbarPosition(position_text)
+    label_text = str(label).strip()
+    if not label_text:
+        raise TemplateValidationError(f"{context}.label must be non-empty when provided.")
+    return enabled, label_text, RasterColorbarPosition(position_text)
+
+
+def _parse_raster_sample_axis_config(
+    value: Any,
+    *,
+    context: str,
+) -> tuple[bool, str | None, str | None, int, float | None, float | None]:
+    if value is None:
+        return False, None, None, 5, None, None
+    if isinstance(value, bool):
+        return value, None, None, 5, None, None
+
+    sample_axis = _ensure_mapping(value, context=context)
+    enabled = bool(sample_axis.get("enabled", True))
+    label = sample_axis.get("label")
+    label_text: str | None = None
+    if label is not None:
+        label_text = str(label).strip()
+        if not label_text:
+            raise TemplateValidationError(f"{context}.label must be non-empty when provided.")
+    unit = sample_axis.get("unit")
+    unit_text: str | None = None
+    if unit is not None:
+        unit_text = str(unit).strip()
+        if not unit_text:
+            raise TemplateValidationError(f"{context}.unit must be non-empty when provided.")
+    tick_count = int(sample_axis.get("ticks", 5))
+    if tick_count < 2:
+        raise TemplateValidationError(f"{context}.ticks must be at least 2.")
+    min_value = sample_axis.get("min")
+    max_value = sample_axis.get("max")
+    if (min_value is None) != (max_value is None):
+        raise TemplateValidationError(f"{context}.min and {context}.max must be set together.")
+    axis_min = float(min_value) if min_value is not None else None
+    axis_max = float(max_value) if max_value is not None else None
+    if axis_min is not None and axis_max is not None and np.isclose(axis_min, axis_max):
+        raise TemplateValidationError(f"{context}.min and {context}.max must differ.")
+    return enabled, label_text, unit_text, tick_count, axis_min, axis_max
+
+
+def _parse_raster_waveform_config(
+    value: Any,
+    *,
+    context: str,
+) -> RasterWaveformSpec:
+    if value is None:
+        return RasterWaveformSpec()
+    if isinstance(value, bool):
+        return RasterWaveformSpec(enabled=value)
+
+    waveform = _ensure_mapping(value, context=context)
+    color_value = waveform.get("color", "#5b3f8c")
+    color_text = str(color_value).strip()
+    if not color_text:
+        raise TemplateValidationError(f"{context}.color must be non-empty when provided.")
+    try:
+        max_traces = waveform.get("max_traces")
+        return RasterWaveformSpec(
+            enabled=bool(waveform.get("enabled", True)),
+            stride=int(waveform.get("stride", 1)),
+            amplitude_scale=float(waveform.get("amplitude_scale", 0.35)),
+            color=color_text,
+            line_width=float(waveform.get("line_width", 0.3)),
+            fill=bool(waveform.get("fill", True)),
+            positive_fill_color=str(waveform.get("positive_fill_color", "#000000")).strip(),
+            negative_fill_color=str(waveform.get("negative_fill_color", "#ffffff")).strip(),
+            invert_fill_polarity=bool(waveform.get("invert_fill_polarity", False)),
+            max_traces=int(max_traces) if max_traces is not None else None,
+        )
+    except (TypeError, ValueError) as exc:
+        raise TemplateValidationError(f"Invalid {context} configuration.") from exc
 
 
 def _parse_grid_scale_kind(value: Any, *, context: str) -> GridScaleKind:
@@ -312,6 +412,28 @@ def _parse_track_kind(raw_kind: Any) -> TrackKind:
     if kind is None:
         raise TemplateValidationError(f"Unsupported track kind {text!r}.")
     return kind
+
+
+def _parse_raster_profile(value: Any, *, context: str) -> RasterProfileKind:
+    text = str(value or "generic").strip().lower()
+    try:
+        return RasterProfileKind(text)
+    except ValueError as exc:
+        raise TemplateValidationError(f"{context} must be one of: generic, vdl, waveform.") from exc
+
+
+def _parse_raster_normalization(
+    value: Any,
+    *,
+    context: str,
+) -> RasterNormalizationKind:
+    text = str(value or "auto").strip().lower()
+    try:
+        return RasterNormalizationKind(text)
+    except ValueError as exc:
+        raise TemplateValidationError(
+            f"{context} must be one of: auto, none, trace_maxabs, global_maxabs."
+        ) from exc
 
 
 def _build_reference_track(data: Any) -> ReferenceTrackSpec:
@@ -562,12 +684,80 @@ def _build_track(track_data: Mapping[str, Any]) -> TrackSpec:
                         "Raster color_limits must contain two numeric values."
                     )
                 color_limits = (float(limits[0]), float(limits[1]))
+            clip_percentiles_cfg = element_data.get("clip_percentiles")
+            clip_percentiles = None
+            if clip_percentiles_cfg is not None:
+                if (
+                    not isinstance(clip_percentiles_cfg, Sequence)
+                    or len(clip_percentiles_cfg) != 2
+                ):
+                    raise TemplateValidationError(
+                        "Raster clip_percentiles must contain two numeric values."
+                    )
+                clip_percentiles = (
+                    float(clip_percentiles_cfg[0]),
+                    float(clip_percentiles_cfg[1]),
+                )
+            colorbar_enabled, colorbar_label, colorbar_position = _parse_raster_colorbar_config(
+                element_data.get("colorbar"),
+                context=f"track {track_data.get('id', '')} element.colorbar",
+            )
+            (
+                sample_axis_enabled,
+                sample_axis_label,
+                sample_axis_unit,
+                sample_axis_tick_count,
+                sample_axis_min,
+                sample_axis_max,
+            ) = (
+                _parse_raster_sample_axis_config(
+                    element_data.get("sample_axis"),
+                    context=f"track {track_data.get('id', '')} element.sample_axis",
+                )
+            )
+            profile = _parse_raster_profile(
+                element_data.get("profile", "generic"),
+                context=f"track {track_data.get('id', '')} element.profile",
+            )
+            waveform_input = element_data.get("waveform")
+            waveform = _parse_raster_waveform_config(
+                waveform_input,
+                context=f"track {track_data.get('id', '')} element.waveform",
+            )
+            if profile == RasterProfileKind.WAVEFORM and waveform_input is None:
+                waveform = RasterWaveformSpec(enabled=True)
+            show_raster = bool(
+                element_data.get("show_raster", profile != RasterProfileKind.WAVEFORM)
+            )
             elements.append(
                 RasterElement(
                     channel=str(element_data["channel"]),
+                    label=element_data.get("label"),
                     style=_build_style(element_data.get("style")),
+                    profile=profile,
+                    normalization=_parse_raster_normalization(
+                        element_data.get("normalization", "auto"),
+                        context=f"track {track_data.get('id', '')} element.normalization",
+                    ),
+                    waveform_normalization=_parse_raster_normalization(
+                        element_data.get("waveform_normalization", "auto"),
+                        context=f"track {track_data.get('id', '')} element.waveform_normalization",
+                    ),
+                    clip_percentiles=clip_percentiles,
                     interpolation=str(element_data.get("interpolation", "nearest")),
+                    show_raster=show_raster,
+                    raster_alpha=float(element_data.get("raster_alpha", 1.0)),
                     color_limits=color_limits,
+                    colorbar_enabled=colorbar_enabled,
+                    colorbar_label=colorbar_label,
+                    colorbar_position=colorbar_position,
+                    sample_axis_enabled=sample_axis_enabled,
+                    sample_axis_label=sample_axis_label,
+                    sample_axis_unit=sample_axis_unit,
+                    sample_axis_min=sample_axis_min,
+                    sample_axis_max=sample_axis_max,
+                    sample_axis_tick_count=sample_axis_tick_count,
+                    waveform=waveform,
                 )
             )
         else:

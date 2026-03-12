@@ -157,7 +157,42 @@ class TemplateTests(unittest.TestCase):
                         "width_mm": 40,
                         "x_scale": {"kind": "linear", "min": 0, "max": 360},
                         "elements": [
-                            {"kind": "raster", "channel": "FMI"},
+                            {
+                                "kind": "raster",
+                                "channel": "FMI",
+                                "label": "VDL VariableDensity",
+                                "profile": "vdl",
+                                "normalization": "trace_maxabs",
+                                "waveform_normalization": "trace_maxabs",
+                                "clip_percentiles": [1, 99],
+                                "show_raster": True,
+                                "raster_alpha": 0.45,
+                                "colorbar": {
+                                    "enabled": True,
+                                    "label": "VDL amp",
+                                    "position": "header",
+                                },
+                                "sample_axis": {
+                                    "enabled": True,
+                                    "label": "Azimuth (deg)",
+                                    "unit": "deg",
+                                    "ticks": 7,
+                                    "min": 200,
+                                    "max": 1200,
+                                },
+                                "waveform": {
+                                    "enabled": True,
+                                    "stride": 5,
+                                    "amplitude_scale": 0.4,
+                                    "color": "#663399",
+                                    "line_width": 0.25,
+                                    "fill": True,
+                                    "positive_fill_color": "#000000",
+                                    "negative_fill_color": "#ffffff",
+                                    "invert_fill_polarity": False,
+                                    "max_traces": 300,
+                                },
+                            },
                             {"kind": "curve", "channel": "FRACTURE_INTENSITY"},
                         ],
                     },
@@ -167,7 +202,62 @@ class TemplateTests(unittest.TestCase):
         image_track = document.tracks[1]
         self.assertEqual(image_track.kind, TrackKind.IMAGE)
         self.assertIsInstance(image_track.elements[0], RasterElement)
+        self.assertEqual(image_track.elements[0].label, "VDL VariableDensity")
+        self.assertEqual(image_track.elements[0].profile, "vdl")
+        self.assertEqual(image_track.elements[0].normalization, "trace_maxabs")
+        self.assertEqual(image_track.elements[0].waveform_normalization, "trace_maxabs")
+        self.assertEqual(image_track.elements[0].clip_percentiles, (1.0, 99.0))
+        self.assertTrue(image_track.elements[0].show_raster)
+        self.assertEqual(image_track.elements[0].raster_alpha, 0.45)
+        self.assertTrue(image_track.elements[0].colorbar_enabled)
+        self.assertEqual(image_track.elements[0].colorbar_label, "VDL amp")
+        self.assertEqual(image_track.elements[0].colorbar_position, "header")
+        self.assertTrue(image_track.elements[0].sample_axis_enabled)
+        self.assertEqual(image_track.elements[0].sample_axis_label, "Azimuth (deg)")
+        self.assertEqual(image_track.elements[0].sample_axis_unit, "deg")
+        self.assertEqual(image_track.elements[0].sample_axis_tick_count, 7)
+        self.assertEqual(image_track.elements[0].sample_axis_min, 200.0)
+        self.assertEqual(image_track.elements[0].sample_axis_max, 1200.0)
+        self.assertTrue(image_track.elements[0].waveform.enabled)
+        self.assertEqual(image_track.elements[0].waveform.stride, 5)
+        self.assertEqual(image_track.elements[0].waveform.amplitude_scale, 0.4)
+        self.assertEqual(image_track.elements[0].waveform.color, "#663399")
+        self.assertEqual(image_track.elements[0].waveform.line_width, 0.25)
+        self.assertTrue(image_track.elements[0].waveform.fill)
+        self.assertEqual(image_track.elements[0].waveform.positive_fill_color, "#000000")
+        self.assertEqual(image_track.elements[0].waveform.negative_fill_color, "#ffffff")
+        self.assertFalse(image_track.elements[0].waveform.invert_fill_polarity)
+        self.assertEqual(image_track.elements[0].waveform.max_traces, 300)
         self.assertIsInstance(image_track.elements[1], CurveElement)
+
+    def test_waveform_profile_defaults_to_waveform_only_mode(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "waveform profile",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "array",
+                        "title": "Array",
+                        "kind": "array",
+                        "width_mm": 40,
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "profile": "waveform",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        element = document.tracks[0].elements[0]
+        self.assertIsInstance(element, RasterElement)
+        self.assertEqual(element.profile, "waveform")
+        self.assertFalse(element.show_raster)
+        self.assertTrue(element.waveform.enabled)
 
     def test_curve_track_rejects_raster_elements(self) -> None:
         with self.assertRaises(ValueError):

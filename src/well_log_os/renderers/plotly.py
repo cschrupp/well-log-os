@@ -12,6 +12,8 @@ from ..model import (
     LogDocument,
     RasterChannel,
     RasterElement,
+    RasterNormalizationKind,
+    RasterProfileKind,
     ScalarChannel,
     ScaleKind,
     TrackKind,
@@ -114,18 +116,41 @@ class PlotlyRenderer(Renderer):
                         raise TypeError(
                             f"Raster element {element.channel} requires a raster channel."
                         )
+                    axis_min, axis_max, axis_unit = self._raster_axis_limits(
+                        track,
+                        element,
+                        channel,
+                    )
+                    sample_axis = np.linspace(axis_min, axis_max, channel.values.shape[1])
+                    raster_values = self._normalize_raster_values(channel.values, element)
+                    heatmap_kwargs = {
+                        "z": raster_values.T,
+                        "x": sample_axis,
+                        "y": channel.depth_in(document.depth_axis.unit, self.registry),
+                        "colorscale": element.style.colormap,
+                        "showscale": element.colorbar_enabled,
+                        "name": element.label or element.channel,
+                    }
+                    limits = self._resolve_raster_color_limits(raster_values, element)
+                    if limits is not None:
+                        heatmap_kwargs["zmin"] = float(limits[0])
+                        heatmap_kwargs["zmax"] = float(limits[1])
+                    if element.colorbar_enabled:
+                        colorbar_title = element.colorbar_label or channel.value_unit or ""
+                        if colorbar_title:
+                            heatmap_kwargs["colorbar"] = {"title": {"text": colorbar_title}}
                     figure.add_trace(
-                        go.Heatmap(
-                            z=channel.values.T,
-                            x=channel.sample_axis,
-                            y=channel.depth_in(document.depth_axis.unit, self.registry),
-                            colorscale=element.style.colormap,
-                            showscale=False,
-                            name=element.channel,
-                        ),
+                        go.Heatmap(**heatmap_kwargs),
                         row=1,
                         col=column,
                     )
+                    if element.sample_axis_enabled:
+                        axis_title = element.sample_axis_label
+                        if not axis_title:
+                            axis_title = channel.sample_label
+                            if axis_unit:
+                                axis_title = f"{axis_title} ({axis_unit})"
+                        figure.update_xaxes(title_text=axis_title, row=1, col=column)
             if track.x_scale is not None:
                 self._update_xaxis(figure, track.x_scale, row=1, col=column)
 
@@ -239,3 +264,74 @@ class PlotlyRenderer(Renderer):
             row=row,
             col=col,
         )
+
+    def _raster_axis_limits(
+        self,
+        track,
+        element: RasterElement,
+        channel: RasterChannel,
+    ) -> tuple[float, float, str | None]:
+        if element.sample_axis_min is not None and element.sample_axis_max is not None:
+            axis_min = float(element.sample_axis_min)
+            axis_max = float(element.sample_axis_max)
+        elif track.x_scale is not None:
+            axis_min = float(track.x_scale.minimum)
+            axis_max = float(track.x_scale.maximum)
+        else:
+            axis_min = float(channel.sample_axis[0])
+            axis_max = float(channel.sample_axis[-1])
+        unit_text = element.sample_axis_unit or channel.sample_unit or None
+        return axis_min, axis_max, unit_text
+
+    def _resolve_raster_normalization(self, element: RasterElement) -> RasterNormalizationKind:
+        if element.normalization != RasterNormalizationKind.AUTO:
+            return element.normalization
+        if element.profile == RasterProfileKind.VDL:
+            return RasterNormalizationKind.TRACE_MAXABS
+        return RasterNormalizationKind.NONE
+
+    def _normalize_raster_values(self, values: np.ndarray, element: RasterElement) -> np.ndarray:
+        normalized = np.asarray(values, dtype=float)
+        mode = self._resolve_raster_normalization(element)
+        if mode == RasterNormalizationKind.NONE:
+            return normalized
+        if mode == RasterNormalizationKind.GLOBAL_MAXABS:
+            denominator = float(np.nanmax(np.abs(normalized)))
+            if np.isfinite(denominator) and not np.isclose(denominator, 0.0):
+                return normalized / denominator
+            return normalized
+        denominators = np.nanmax(np.abs(normalized), axis=1, keepdims=True)
+        valid = np.isfinite(denominators) & ~np.isclose(denominators, 0.0)
+        safe_denominators = np.where(valid, denominators, 1.0)
+        return normalized / safe_denominators
+
+    def _resolve_raster_color_limits(
+        self,
+        values: np.ndarray,
+        element: RasterElement,
+    ) -> tuple[float, float] | None:
+        if element.color_limits is not None:
+            return float(element.color_limits[0]), float(element.color_limits[1])
+        finite = values[np.isfinite(values)]
+        if finite.size < 2:
+            return None
+        if element.clip_percentiles is not None:
+            low, high = element.clip_percentiles
+            lower, upper = np.nanpercentile(finite, [low, high])
+            if np.isclose(lower, upper):
+                lower = float(np.nanmin(finite))
+                upper = float(np.nanmax(finite))
+            return float(lower), float(upper)
+        if element.profile == RasterProfileKind.VDL:
+            normalization = self._resolve_raster_normalization(element)
+            if normalization in {
+                RasterNormalizationKind.TRACE_MAXABS,
+                RasterNormalizationKind.GLOBAL_MAXABS,
+            }:
+                return -1.0, 1.0
+            lower, upper = np.nanpercentile(finite, [2.0, 98.0])
+            if np.isclose(lower, upper):
+                lower = float(np.nanmin(finite))
+                upper = float(np.nanmax(finite))
+            return float(lower), float(upper)
+        return None

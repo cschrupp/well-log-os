@@ -62,6 +62,24 @@ class NumberFormatKind(StrEnum):
     CONCISE = "concise"
 
 
+class RasterProfileKind(StrEnum):
+    GENERIC = "generic"
+    VDL = "vdl"
+    WAVEFORM = "waveform"
+
+
+class RasterNormalizationKind(StrEnum):
+    AUTO = "auto"
+    NONE = "none"
+    TRACE_MAXABS = "trace_maxabs"
+    GLOBAL_MAXABS = "global_maxabs"
+
+
+class RasterColorbarPosition(StrEnum):
+    RIGHT = "right"
+    HEADER = "header"
+
+
 @dataclass(slots=True)
 class StyleSpec:
     color: str = "black"
@@ -288,11 +306,84 @@ class CurveElement:
 
 
 @dataclass(slots=True)
+class RasterWaveformSpec:
+    enabled: bool = False
+    stride: int = 1
+    amplitude_scale: float = 0.35
+    color: str = "#5b3f8c"
+    line_width: float = 0.3
+    fill: bool = True
+    positive_fill_color: str = "#000000"
+    negative_fill_color: str = "#ffffff"
+    invert_fill_polarity: bool = False
+    max_traces: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.stride <= 0:
+            raise ValueError("Raster waveform stride must be positive.")
+        if self.amplitude_scale <= 0:
+            raise ValueError("Raster waveform amplitude_scale must be positive.")
+        if self.line_width <= 0:
+            raise ValueError("Raster waveform line_width must be positive.")
+        if self.max_traces is not None and self.max_traces <= 0:
+            raise ValueError("Raster waveform max_traces must be positive.")
+        if not str(self.color).strip():
+            raise ValueError("Raster waveform color must be non-empty.")
+        if not str(self.positive_fill_color).strip():
+            raise ValueError("Raster waveform positive_fill_color must be non-empty.")
+        if not str(self.negative_fill_color).strip():
+            raise ValueError("Raster waveform negative_fill_color must be non-empty.")
+
+
+@dataclass(slots=True)
 class RasterElement:
     channel: str
+    label: str | None = None
     style: StyleSpec = field(default_factory=StyleSpec)
+    profile: RasterProfileKind = RasterProfileKind.GENERIC
+    normalization: RasterNormalizationKind = RasterNormalizationKind.AUTO
+    waveform_normalization: RasterNormalizationKind = RasterNormalizationKind.AUTO
+    clip_percentiles: tuple[float, float] | None = None
     interpolation: str = "nearest"
+    show_raster: bool = True
+    raster_alpha: float = 1.0
     color_limits: tuple[float, float] | None = None
+    colorbar_enabled: bool = False
+    colorbar_label: str | None = None
+    colorbar_position: RasterColorbarPosition = RasterColorbarPosition.RIGHT
+    sample_axis_enabled: bool = False
+    sample_axis_label: str | None = None
+    sample_axis_unit: str | None = None
+    sample_axis_min: float | None = None
+    sample_axis_max: float | None = None
+    sample_axis_tick_count: int = 5
+    waveform: RasterWaveformSpec = field(default_factory=RasterWaveformSpec)
+
+    def __post_init__(self) -> None:
+        if self.label is not None and not str(self.label).strip():
+            raise ValueError("Raster label must be non-empty when provided.")
+        if self.clip_percentiles is not None:
+            low, high = self.clip_percentiles
+            if low < 0 or low > 100 or high < 0 or high > 100:
+                raise ValueError("Raster clip_percentiles must be between 0 and 100.")
+            if low >= high:
+                raise ValueError("Raster clip_percentiles must be increasing.")
+        if self.raster_alpha < 0 or self.raster_alpha > 1:
+            raise ValueError("Raster raster_alpha must be between 0 and 1.")
+        if self.colorbar_label is not None and not str(self.colorbar_label).strip():
+            raise ValueError("Raster colorbar_label must be non-empty when provided.")
+        if self.sample_axis_label is not None and not str(self.sample_axis_label).strip():
+            raise ValueError("Raster sample_axis_label must be non-empty when provided.")
+        if self.sample_axis_unit is not None and not str(self.sample_axis_unit).strip():
+            raise ValueError("Raster sample_axis_unit must be non-empty when provided.")
+        has_min = self.sample_axis_min is not None
+        has_max = self.sample_axis_max is not None
+        if has_min != has_max:
+            raise ValueError("Raster sample_axis_min and sample_axis_max must be set together.")
+        if has_min and has_max and float(self.sample_axis_min) == float(self.sample_axis_max):
+            raise ValueError("Raster sample_axis_min and sample_axis_max must differ.")
+        if self.sample_axis_tick_count < 2:
+            raise ValueError("Raster sample_axis_tick_count must be at least 2.")
 
 
 TrackElement = CurveElement | RasterElement

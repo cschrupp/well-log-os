@@ -21,7 +21,11 @@ from ..model import (
     LogDocument,
     NumberFormatKind,
     RasterChannel,
+    RasterColorbarPosition,
     RasterElement,
+    RasterNormalizationKind,
+    RasterProfileKind,
+    RasterWaveformSpec,
     ReferenceTrackSpec,
     ScalarChannel,
     ScaleKind,
@@ -687,7 +691,7 @@ class MatplotlibRenderer(Renderer):
             elif item.kind == TrackHeaderObjectKind.SCALE:
                 self._draw_track_header_scale(ax, track, document, dataset, slot_top, slot_bottom)
             elif item.kind == TrackHeaderObjectKind.LEGEND:
-                self._draw_track_header_legend(ax, track, slot_top, slot_bottom)
+                self._draw_track_header_legend(ax, track, dataset, slot_top, slot_bottom)
             elif item.kind == TrackHeaderObjectKind.DIVISIONS:
                 self._draw_track_header_divisions(ax, track, dataset, slot_top, slot_bottom)
 
@@ -802,6 +806,54 @@ class MatplotlibRenderer(Renderer):
 
         curves = self._curve_elements(track)
         if not curves:
+            rasters = self._raster_elements(track)
+            if rasters:
+                target = rasters[0]
+                channel = dataset.get_channel(target.channel)
+                if isinstance(channel, RasterChannel):
+                    left_value, unit_text, right_value = self._raster_scale_text_triplet(
+                        track,
+                        target,
+                        channel,
+                    )
+                    fontsize = self._slot_font_size(
+                        ax,
+                        slot_top,
+                        slot_bottom,
+                        min_pt=float(track_header_style["scale_min_pt"]),
+                        max_pt=float(track_header_style["scale_max_pt"]),
+                    )
+                    ax.text(
+                        float(track_header_style["scale_left_x"]),
+                        0.5 * (slot_top + slot_bottom),
+                        left_value,
+                        transform=ax.transAxes,
+                        ha="left",
+                        va="center",
+                        fontsize=fontsize,
+                        clip_on=True,
+                    )
+                    ax.text(
+                        float(track_header_style["scale_unit_x"]),
+                        0.5 * (slot_top + slot_bottom),
+                        unit_text,
+                        transform=ax.transAxes,
+                        ha="center",
+                        va="center",
+                        fontsize=fontsize,
+                        clip_on=True,
+                    )
+                    ax.text(
+                        float(track_header_style["scale_right_x"]),
+                        0.5 * (slot_top + slot_bottom),
+                        right_value,
+                        transform=ax.transAxes,
+                        ha="right",
+                        va="center",
+                        fontsize=fontsize,
+                        clip_on=True,
+                    )
+                    return
             fontsize = self._slot_font_size(
                 ax,
                 slot_top,
@@ -897,6 +949,299 @@ class MatplotlibRenderer(Renderer):
 
     def _curve_elements(self, track) -> list[CurveElement]:
         return [element for element in track.elements if isinstance(element, CurveElement)]
+
+    def _raster_elements(self, track) -> list[RasterElement]:
+        return [element for element in track.elements if isinstance(element, RasterElement)]
+
+    def _raster_header_label(self, element: RasterElement, channel: RasterChannel) -> str:
+        if element.label:
+            return element.label
+        description = str(channel.description or "").strip()
+        if description:
+            return description
+        return channel.mnemonic
+
+    def _raster_axis_limits(
+        self,
+        track,
+        element: RasterElement,
+        channel: RasterChannel,
+    ) -> tuple[float, float, str | None]:
+        if element.sample_axis_min is not None and element.sample_axis_max is not None:
+            axis_min = float(element.sample_axis_min)
+            axis_max = float(element.sample_axis_max)
+        elif track.x_scale is not None:
+            axis_min = float(track.x_scale.minimum)
+            axis_max = float(track.x_scale.maximum)
+        else:
+            axis_min = float(channel.sample_axis[0])
+            axis_max = float(channel.sample_axis[-1])
+        if np.isclose(axis_min, axis_max):
+            axis_min = float(channel.sample_axis[0])
+            axis_max = float(channel.sample_axis[-1])
+        unit_text = element.sample_axis_unit or channel.sample_unit or None
+        return axis_min, axis_max, unit_text
+
+    def _raster_scale_text_triplet(
+        self,
+        track,
+        element: RasterElement,
+        channel: RasterChannel,
+    ) -> tuple[str, str, str]:
+        axis_min, axis_max, unit_text = self._raster_axis_limits(track, element, channel)
+        reverse = bool(track.x_scale.reverse) if track.x_scale is not None else False
+        left = axis_max if reverse else axis_min
+        right = axis_min if reverse else axis_max
+        return f"{left:g}", unit_text or "", f"{right:g}"
+
+    def _resolve_raster_normalization(
+        self,
+        element: RasterElement,
+        *,
+        target: str,
+    ) -> RasterNormalizationKind:
+        if target == "waveform":
+            requested = element.waveform_normalization
+        else:
+            requested = element.normalization
+        if requested != RasterNormalizationKind.AUTO:
+            return requested
+
+        if element.profile == RasterProfileKind.VDL:
+            if target == "waveform":
+                return RasterNormalizationKind.TRACE_MAXABS
+            return RasterNormalizationKind.GLOBAL_MAXABS
+        if element.profile == RasterProfileKind.WAVEFORM:
+            if target == "waveform":
+                return RasterNormalizationKind.TRACE_MAXABS
+            return RasterNormalizationKind.NONE
+        return RasterNormalizationKind.NONE
+
+    def _normalize_raster_values(
+        self,
+        values: np.ndarray,
+        mode: RasterNormalizationKind,
+    ) -> np.ndarray:
+        normalized = np.asarray(values, dtype=float)
+        if mode == RasterNormalizationKind.NONE:
+            return normalized
+        if mode == RasterNormalizationKind.GLOBAL_MAXABS:
+            denominator = float(np.nanmax(np.abs(normalized)))
+            if np.isfinite(denominator) and not np.isclose(denominator, 0.0):
+                return normalized / denominator
+            return normalized
+
+        # TRACE_MAXABS mode: normalize each waveform independently, a standard VDL behavior.
+        denominators = np.nanmax(np.abs(normalized), axis=1, keepdims=True)
+        valid = np.isfinite(denominators) & ~np.isclose(denominators, 0.0)
+        safe_denominators = np.where(valid, denominators, 1.0)
+        return normalized / safe_denominators
+
+    def _resolve_raster_color_limits(
+        self,
+        values: np.ndarray,
+        element: RasterElement,
+    ) -> tuple[float, float] | None:
+        if element.color_limits is not None:
+            return float(element.color_limits[0]), float(element.color_limits[1])
+
+        finite = values[np.isfinite(values)]
+        if finite.size < 2:
+            return None
+
+        if element.clip_percentiles is not None:
+            low, high = element.clip_percentiles
+            lower, upper = np.nanpercentile(finite, [low, high])
+            if np.isclose(lower, upper):
+                lower = float(np.nanmin(finite))
+                upper = float(np.nanmax(finite))
+            return float(lower), float(upper)
+
+        if element.profile == RasterProfileKind.VDL:
+            normalization = self._resolve_raster_normalization(
+                element,
+                target="raster",
+            )
+            if normalization in {
+                RasterNormalizationKind.TRACE_MAXABS,
+                RasterNormalizationKind.GLOBAL_MAXABS,
+            }:
+                return -1.0, 1.0
+            lower, upper = np.nanpercentile(finite, [2.0, 98.0])
+            if np.isclose(lower, upper):
+                lower = float(np.nanmin(finite))
+                upper = float(np.nanmax(finite))
+            return float(lower), float(upper)
+
+        return None
+
+    def _resolved_raster_colormap(self, element: RasterElement) -> str:
+        if (
+            element.profile == RasterProfileKind.VDL
+            and str(element.style.colormap).strip().lower() == "viridis"
+        ):
+            # VDL convention: positive amplitudes black, negative amplitudes white.
+            return "gray_r"
+        return element.style.colormap
+
+    def _draw_raster_waveforms(
+        self,
+        ax,
+        *,
+        depth: np.ndarray,
+        x_axis: np.ndarray,
+        values: np.ndarray,
+        waveform: RasterWaveformSpec,
+        opacity: float,
+    ) -> None:
+        if not waveform.enabled:
+            return
+
+        y_limits = ax.get_ylim()
+        window_top = min(y_limits)
+        window_base = max(y_limits)
+        selected = self._select_waveform_indices(
+            depth,
+            window_top=window_top,
+            window_base=window_base,
+            waveform=waveform,
+        )
+        if selected.size == 0:
+            return
+
+        depth_step = float(np.nanmedian(np.abs(np.diff(depth))))
+        if not np.isfinite(depth_step) or np.isclose(depth_step, 0.0):
+            depth_step = 1.0
+        amplitude = waveform.amplitude_scale * depth_step * waveform.stride
+
+        for depth_index in selected:
+            trace = values[depth_index]
+            finite = np.isfinite(trace)
+            if np.count_nonzero(finite) < 2:
+                continue
+            x = x_axis[finite]
+            trace_values = trace[finite]
+            baseline = np.full(trace_values.shape, depth[depth_index], dtype=float)
+            y = baseline + trace_values * amplitude
+            signed = -trace_values if waveform.invert_fill_polarity else trace_values
+            x_fill, y_fill, baseline_fill, signed_fill = self._trace_fill_series(
+                x,
+                y,
+                baseline,
+                signed,
+            )
+            if waveform.fill:
+                positive = signed_fill > 0
+                negative = signed_fill < 0
+                if np.any(positive):
+                    ax.fill_between(
+                        x_fill,
+                        baseline_fill,
+                        y_fill,
+                        where=positive,
+                        facecolor=waveform.positive_fill_color,
+                        linewidth=0.0,
+                        alpha=opacity,
+                        zorder=4.0,
+                        interpolate=False,
+                    )
+                if np.any(negative):
+                    ax.fill_between(
+                        x_fill,
+                        baseline_fill,
+                        y_fill,
+                        where=negative,
+                        facecolor=waveform.negative_fill_color,
+                        linewidth=0.0,
+                        alpha=opacity,
+                        zorder=4.0,
+                        interpolate=False,
+                    )
+            ax.plot(
+                x,
+                y,
+                color=waveform.color,
+                linewidth=waveform.line_width,
+                alpha=opacity,
+                zorder=4.2,
+                clip_on=True,
+            )
+
+    def _select_waveform_indices(
+        self,
+        depth: np.ndarray,
+        *,
+        window_top: float,
+        window_base: float,
+        waveform: RasterWaveformSpec,
+    ) -> np.ndarray:
+        finite_indices = np.where(np.isfinite(depth))[0]
+        if finite_indices.size == 0:
+            return np.asarray([], dtype=int)
+        # Anchor sampling from top-of-log depth order, independent of channel storage order.
+        ordered = finite_indices[np.argsort(depth[finite_indices], kind="mergesort")]
+        selected = ordered[:: waveform.stride]
+        if selected.size == 0:
+            return selected
+        if waveform.max_traces is not None and selected.size > waveform.max_traces:
+            downsample = int(np.ceil(selected.size / waveform.max_traces))
+            selected = selected[::downsample]
+        selected = np.sort(selected)
+        depth_values = depth[selected]
+        visible = (depth_values >= window_top) & (depth_values <= window_base)
+        return selected[visible]
+
+    def _trace_fill_series(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        baseline: np.ndarray,
+        signed: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        if x.size < 2:
+            return x, y, baseline, signed
+
+        x_out: list[float] = [float(x[0])]
+        y_out: list[float] = [float(y[0])]
+        baseline_out: list[float] = [float(baseline[0])]
+        signed_out: list[float] = [float(signed[0])]
+
+        for index in range(x.size - 1):
+            x0 = float(x[index])
+            x1 = float(x[index + 1])
+            y0 = float(y[index])
+            y1 = float(y[index + 1])
+            b0 = float(baseline[index])
+            b1 = float(baseline[index + 1])
+            s0 = float(signed[index])
+            s1 = float(signed[index + 1])
+
+            if s0 == 0.0:
+                x_out.append(x0)
+                y_out.append(y0)
+                baseline_out.append(b0)
+                signed_out.append(0.0)
+
+            if s0 * s1 < 0.0:
+                fraction = abs(s0) / (abs(s0) + abs(s1))
+                xc = x0 + (x1 - x0) * fraction
+                bc = b0 + (b1 - b0) * fraction
+                x_out.append(xc)
+                y_out.append(bc)
+                baseline_out.append(bc)
+                signed_out.append(0.0)
+
+            x_out.append(x1)
+            y_out.append(y1)
+            baseline_out.append(b1)
+            signed_out.append(s1)
+
+        return (
+            np.asarray(x_out, dtype=float),
+            np.asarray(y_out, dtype=float),
+            np.asarray(baseline_out, dtype=float),
+            np.asarray(signed_out, dtype=float),
+        )
 
     def _curve_row_bounds(
         self,
@@ -994,6 +1339,120 @@ class MatplotlibRenderer(Renderer):
                     return float(np.nanmin(finite)), float(np.nanmax(finite)), ScaleKind.LINEAR
         return None
 
+    def _header_raster_colorbar_target(
+        self,
+        track,
+        dataset: WellDataset,
+    ) -> tuple[RasterElement, RasterChannel] | None:
+        for element in self._raster_elements(track):
+            if not element.colorbar_enabled:
+                continue
+            if element.colorbar_position != RasterColorbarPosition.HEADER:
+                continue
+            if not element.show_raster:
+                continue
+            channel = dataset.get_channel(element.channel)
+            if isinstance(channel, RasterChannel):
+                return element, channel
+        return None
+
+    def _draw_track_header_raster_colorbar(
+        self,
+        ax,
+        track,
+        element: RasterElement,
+        channel: RasterChannel,
+        slot_top: float,
+        slot_bottom: float,
+    ) -> None:
+        track_header_style = self._style_section("track_header")
+        raster_style = self._style_section("raster")
+        slot_height = slot_top - slot_bottom
+        label_fontsize = self._slot_font_size(
+            ax,
+            slot_top,
+            slot_bottom,
+            min_pt=float(track_header_style["scale_min_pt"]),
+            max_pt=float(track_header_style["scale_max_pt"]),
+        )
+        tick_fontsize = max(label_fontsize - 0.6, 2.5)
+        bar_left = float(track_header_style["scale_left_x"])
+        bar_right = float(track_header_style["scale_right_x"])
+        bar_center = slot_bottom + slot_height * float(
+            raster_style["header_colorbar_bar_center_y_ratio"]
+        )
+        bar_height = slot_height * float(raster_style["header_colorbar_bar_height_ratio"])
+        bar_bottom = max(slot_bottom, bar_center - 0.5 * bar_height)
+        bar_top = min(slot_top, bar_center + 0.5 * bar_height)
+        label_y = slot_bottom + slot_height * float(raster_style["header_colorbar_label_y_ratio"])
+
+        raster_mode = self._resolve_raster_normalization(element, target="raster")
+        normalized_values = self._normalize_raster_values(channel.values, raster_mode)
+        limits = self._resolve_raster_color_limits(normalized_values, element)
+        if limits is None:
+            finite = normalized_values[np.isfinite(normalized_values)]
+            if finite.size >= 2:
+                limits = (float(np.nanmin(finite)), float(np.nanmax(finite)))
+            else:
+                limits = (0.0, 1.0)
+        left_value = f"{limits[0]:g}"
+        right_value = f"{limits[1]:g}"
+        center_text = element.colorbar_label or channel.value_unit or "Amplitude"
+
+        gradient = np.linspace(0.0, 1.0, 128, dtype=float)[None, :]
+        ax.imshow(
+            gradient,
+            cmap=self._resolved_raster_colormap(element),
+            extent=[bar_left, bar_right, bar_bottom, bar_top],
+            transform=ax.transAxes,
+            origin="lower",
+            aspect="auto",
+            interpolation="nearest",
+            zorder=1.0,
+        )
+        ax.plot(
+            [bar_left, bar_right, bar_right, bar_left, bar_left],
+            [bar_bottom, bar_bottom, bar_top, bar_top, bar_bottom],
+            transform=ax.transAxes,
+            color=str(raster_style["header_colorbar_border_color"]),
+            linewidth=float(raster_style["header_colorbar_border_linewidth"]),
+            zorder=1.2,
+        )
+        text_color = str(raster_style["header_colorbar_text_color"])
+        ax.text(
+            bar_left,
+            label_y,
+            left_value,
+            transform=ax.transAxes,
+            ha="left",
+            va="center",
+            fontsize=tick_fontsize,
+            color=text_color,
+            clip_on=True,
+        )
+        ax.text(
+            0.5 * (bar_left + bar_right),
+            label_y,
+            center_text,
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+            fontsize=label_fontsize,
+            color=text_color,
+            clip_on=True,
+        )
+        ax.text(
+            bar_right,
+            label_y,
+            right_value,
+            transform=ax.transAxes,
+            ha="right",
+            va="center",
+            fontsize=tick_fontsize,
+            color=text_color,
+            clip_on=True,
+        )
+
     def _draw_track_header_divisions(
         self,
         ax,
@@ -1005,6 +1464,18 @@ class MatplotlibRenderer(Renderer):
         track_header_style = self._style_section("track_header")
         division_scale = self._header_division_scale(track, dataset)
         if division_scale is None:
+            raster_target = self._header_raster_colorbar_target(track, dataset)
+            if raster_target is not None:
+                element, channel = raster_target
+                self._draw_track_header_raster_colorbar(
+                    ax,
+                    track,
+                    element,
+                    channel,
+                    slot_top,
+                    slot_bottom,
+                )
+                return
             fontsize = self._slot_font_size(
                 ax,
                 slot_top,
@@ -1096,10 +1567,52 @@ class MatplotlibRenderer(Renderer):
                 clip_on=True,
             )
 
-    def _draw_track_header_legend(self, ax, track, slot_top: float, slot_bottom: float) -> None:
+    def _draw_track_header_legend(
+        self,
+        ax,
+        track,
+        dataset: WellDataset,
+        slot_top: float,
+        slot_bottom: float,
+    ) -> None:
         track_header_style = self._style_section("track_header")
         curves = self._curve_elements(track)
         if not curves:
+            rasters = self._raster_elements(track)
+            if rasters:
+                target = rasters[0]
+                channel = dataset.get_channel(target.channel)
+                if isinstance(channel, RasterChannel):
+                    fontsize = self._slot_font_size(
+                        ax,
+                        slot_top,
+                        slot_bottom,
+                        min_pt=float(track_header_style["legend_row_min_pt"]),
+                        max_pt=float(track_header_style["legend_row_max_pt"]),
+                    )
+                    label = self._raster_header_label(target, channel)
+                    available_px = max(ax.bbox.width * 0.9, 1.0)
+                    approx_char_px = max(
+                        fontsize * float(track_header_style["legend_char_width_ratio"]),
+                        1.0,
+                    )
+                    max_chars = max(
+                        int(track_header_style["legend_min_chars"]),
+                        int(available_px / approx_char_px),
+                    )
+                    if len(label) > max_chars:
+                        label = f"{label[: max_chars - 3]}..."
+                    ax.text(
+                        0.5,
+                        0.5 * (slot_top + slot_bottom),
+                        label,
+                        transform=ax.transAxes,
+                        ha="center",
+                        va="center",
+                        fontsize=fontsize,
+                        clip_on=True,
+                    )
+                    return
             fontsize = self._slot_font_size(
                 ax,
                 slot_top,
@@ -1652,24 +2165,17 @@ class MatplotlibRenderer(Renderer):
             self._configure_x_axis(ax, track)
             self._apply_scale(ax, track)
         self._draw_vertical_grid_lines(ax, track, window, dataset)
-        if independent_curve_scales:
-            ax.tick_params(
-                axis="x",
-                which="both",
-                top=False,
-                bottom=False,
-                labeltop=False,
-                labelbottom=False,
-            )
-        else:
-            ax.tick_params(
-                axis="x",
-                which="both",
-                top=False,
-                bottom=False,
-                labeltop=False,
-                labelbottom=False,
-            )
+        show_sample_axis = False
+        if track.kind == TrackKind.ARRAY:
+            show_sample_axis = self._draw_array_sample_axis(ax, track, dataset)
+        ax.tick_params(
+            axis="x",
+            which="both",
+            top=False,
+            bottom=show_sample_axis,
+            labeltop=False,
+            labelbottom=show_sample_axis,
+        )
         ax.tick_params(axis="y", length=0, labelleft=False)
 
     def _uses_independent_curve_scales(self, track) -> bool:
@@ -1684,6 +2190,53 @@ class MatplotlibRenderer(Renderer):
         ax.set_xlim(0.0, 1.0)
         ax.xaxis.set_major_locator(mticker.MultipleLocator(0.2))
         ax.xaxis.set_minor_locator(mticker.MultipleLocator(0.1))
+
+    def _draw_array_sample_axis(self, ax, track, dataset: WellDataset) -> bool:
+        raster_elements = [
+            element for element in track.elements if isinstance(element, RasterElement)
+        ]
+        if not raster_elements:
+            return False
+        target = next((element for element in raster_elements if element.sample_axis_enabled), None)
+        if target is None:
+            return False
+
+        channel = dataset.get_channel(target.channel)
+        if not isinstance(channel, RasterChannel):
+            return False
+
+        tick_count = max(target.sample_axis_tick_count, 2)
+        axis_min, axis_max, axis_unit = self._raster_axis_limits(track, target, channel)
+        if np.isclose(axis_min, axis_max):
+            return False
+
+        ticks = np.linspace(axis_min, axis_max, tick_count)
+        ax.set_xticks(ticks)
+        ax.set_xticklabels([f"{value:g}" for value in ticks])
+
+        raster_style = self._style_section("raster")
+        ax.tick_params(
+            axis="x",
+            which="major",
+            length=2.0,
+            pad=1.2,
+            labelsize=float(raster_style["sample_axis_tick_labelsize"]),
+            colors=str(raster_style["sample_axis_tick_color"]),
+        )
+        label = target.sample_axis_label
+        if not label:
+            sample_label = str(channel.sample_label or "sample")
+            if axis_unit:
+                label = f"{sample_label} ({axis_unit})"
+            else:
+                label = sample_label
+        ax.set_xlabel(
+            label,
+            fontsize=float(raster_style["sample_axis_label_fontsize"]),
+            color=str(raster_style["sample_axis_label_color"]),
+            labelpad=float(raster_style["sample_axis_label_pad"]),
+        )
+        return True
 
     def _tangential_transform_values(self, values: np.ndarray, scale) -> np.ndarray:
         spread = float(self._style_section("track").get("tangential_spread", 1.2))
@@ -2013,27 +2566,86 @@ class MatplotlibRenderer(Renderer):
         if not isinstance(channel, RasterChannel):
             raise TypeError(f"Raster element {element.channel} requires a raster channel.")
         depth = channel.depth_in(document.depth_axis.unit, self.registry)
+        axis_min, axis_max, _ = self._raster_axis_limits(track, element, channel)
+        waveform_mode = self._resolve_raster_normalization(element, target="waveform")
+        waveform_values = self._normalize_raster_values(channel.values, waveform_mode)
+        x_axis = np.linspace(axis_min, axis_max, waveform_values.shape[1], dtype=float)
         extent = [
-            float(channel.sample_axis[0]),
-            float(channel.sample_axis[-1]),
+            axis_min,
+            axis_max,
             float(depth[-1]),
             float(depth[0]),
         ]
         image_kwargs = {
             "aspect": "auto",
             "extent": extent,
-            "cmap": element.style.colormap,
+            "cmap": self._resolved_raster_colormap(element),
             "interpolation": element.interpolation,
             "origin": "upper",
         }
-        if element.color_limits is not None:
-            image_kwargs["vmin"], image_kwargs["vmax"] = element.color_limits
-        ax.imshow(channel.values.T, **image_kwargs)
+        show_raster = element.show_raster and element.profile != RasterProfileKind.WAVEFORM
+        image = None
+        if show_raster:
+            raster_mode = self._resolve_raster_normalization(element, target="raster")
+            raster_values = self._normalize_raster_values(channel.values, raster_mode)
+            resolved_limits = self._resolve_raster_color_limits(raster_values, element)
+            if resolved_limits is not None:
+                image_kwargs["vmin"], image_kwargs["vmax"] = resolved_limits
+            image = ax.imshow(raster_values.T, alpha=element.raster_alpha, **image_kwargs)
+        if (
+            image is not None
+            and element.colorbar_enabled
+            and element.colorbar_position == RasterColorbarPosition.RIGHT
+        ):
+            self._draw_raster_colorbar(ax, image, element, channel)
+        self._draw_raster_waveforms(
+            ax,
+            depth=depth,
+            x_axis=x_axis,
+            values=waveform_values,
+            waveform=element.waveform,
+            opacity=element.style.opacity,
+        )
         if track.x_scale is not None:
             if track.x_scale.reverse:
                 ax.set_xlim(track.x_scale.maximum, track.x_scale.minimum)
             else:
                 ax.set_xlim(track.x_scale.minimum, track.x_scale.maximum)
+
+    def _draw_raster_colorbar(self, ax, image, element, channel: RasterChannel) -> None:
+        from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+        raster_style = self._style_section("raster")
+        width_ratio = max(float(raster_style["colorbar_width_ratio"]), 1e-3)
+        pad_ratio = max(float(raster_style["colorbar_pad_ratio"]), 0.0)
+        width_ratio = min(width_ratio, 0.4)
+        x_anchor = max(1.0 - width_ratio - pad_ratio, 0.0)
+        cax = inset_axes(
+            ax,
+            width=f"{width_ratio * 100:.3f}%",
+            height="100%",
+            loc="lower left",
+            bbox_to_anchor=(x_anchor, 0.0, 1.0, 1.0),
+            bbox_transform=ax.transAxes,
+            borderpad=0.0,
+        )
+        colorbar = ax.figure.colorbar(image, cax=cax)
+        colorbar.ax.tick_params(
+            labelsize=float(raster_style["colorbar_tick_labelsize"]),
+            colors=str(raster_style["colorbar_tick_color"]),
+            length=1.8,
+            pad=0.8,
+        )
+        colorbar.outline.set_linewidth(0.5)
+        colorbar.outline.set_edgecolor(str(raster_style["colorbar_tick_color"]))
+        label = element.colorbar_label or channel.value_unit or ""
+        if label:
+            colorbar.set_label(
+                label,
+                fontsize=float(raster_style["colorbar_label_fontsize"]),
+                color=str(raster_style["colorbar_label_color"]),
+                labelpad=1.5,
+            )
 
     def _apply_scale(self, ax, track) -> None:
         if track.x_scale is None:

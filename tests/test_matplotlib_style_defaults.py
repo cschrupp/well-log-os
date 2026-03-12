@@ -10,6 +10,7 @@ from well_log_os import (
     CurveElement,
     CurveHeaderDisplaySpec,
     GridScaleKind,
+    RasterChannel,
     ScalarChannel,
     ScaleKind,
     ScaleSpec,
@@ -44,6 +45,9 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
         self.assertEqual(renderer.style["track_header"]["title_x"], 0.03)
         self.assertTrue(renderer.style["section_title"]["enabled"])
         self.assertEqual(renderer.style["section_title"]["height_mm"], 6.0)
+        self.assertEqual(renderer.style["raster"]["colorbar_width_ratio"], 0.06)
+        self.assertEqual(renderer.style["raster"]["sample_axis_tick_labelsize"], 5.0)
+        self.assertEqual(renderer.style["raster"]["header_colorbar_bar_height_ratio"], 0.26)
 
     def test_renderer_style_override_deep_merges(self) -> None:
         renderer = MatplotlibRenderer(
@@ -236,6 +240,99 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
         self.assertAlmostEqual(float(wrapped[0]), 100.0, places=4)
         self.assertAlmostEqual(float(wrapped[4]), 20.0, places=4)
 
+    def test_vdl_raster_profile_normalizes_trace_amplitude(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "vdl profile",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "vdl",
+                        "title": "VDL",
+                        "kind": "array",
+                        "width_mm": 40,
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "profile": "vdl",
+                                "normalization": "auto",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        depth = np.array([1000.0, 1001.0, 1002.0])
+        values = np.array(
+            [
+                [1.0, -2.0, 2.0],
+                [10.0, -10.0, 5.0],
+                [4.0, -1.0, 0.5],
+            ],
+            dtype=float,
+        )
+        dataset = WellDataset(name="vdl")
+        dataset.add_channel(
+            RasterChannel(
+                "VDL",
+                depth,
+                "m",
+                "amp",
+                values=values,
+                sample_axis=np.array([0.0, 1.0, 2.0], dtype=float),
+            )
+        )
+        renderer = MatplotlibRenderer()
+        track = document.tracks[0]
+        element = track.elements[0]
+        channel = dataset.get_channel("VDL")
+        assert isinstance(channel, RasterChannel)
+        mode = renderer._resolve_raster_normalization(element, target="waveform")
+        normalized = renderer._normalize_raster_values(channel.values, mode)
+        self.assertAlmostEqual(float(np.nanmax(np.abs(normalized[0]))), 1.0)
+        self.assertAlmostEqual(float(np.nanmax(np.abs(normalized[1]))), 1.0)
+        self.assertAlmostEqual(float(np.nanmax(np.abs(normalized[2]))), 1.0)
+        limits = renderer._resolve_raster_color_limits(normalized, element)
+        self.assertEqual(limits, (-1.0, 1.0))
+
+    def test_vdl_profile_uses_split_auto_normalization_modes(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "vdl profile split",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "vdl",
+                        "title": "VDL",
+                        "kind": "array",
+                        "width_mm": 40,
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "profile": "vdl",
+                                "normalization": "auto",
+                                "waveform_normalization": "auto",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        element = document.tracks[0].elements[0]
+        renderer = MatplotlibRenderer()
+        self.assertEqual(
+            renderer._resolve_raster_normalization(element, target="raster"),
+            "global_maxabs",
+        )
+        self.assertEqual(
+            renderer._resolve_raster_normalization(element, target="waveform"),
+            "trace_maxabs",
+        )
+
     def test_log_grid_scale_mode_auto_uses_cycles_from_scale_bounds(self) -> None:
         document = document_from_mapping(
             {
@@ -302,6 +399,153 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
             self.assertTrue(output.exists())
             # Without auto-strip this would be one continuous page per section (2 pages total).
             self.assertGreater(result.page_count, 2)
+
+    def test_render_array_track_with_colorbar_and_sample_axis(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "array track",
+                "page": {"size": "A4", "continuous": True},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "depth_range": [1000.0, 1020.0],
+                "tracks": [
+                    {"id": "depth", "title": "Depth", "kind": "reference", "width_mm": 18},
+                    {
+                        "id": "vdl",
+                        "title": "VDL",
+                        "kind": "array",
+                        "width_mm": 42,
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "style": {"colormap": "bone"},
+                                "color_limits": [-1.0, 1.0],
+                                "colorbar": {"enabled": True, "label": "VDL amp"},
+                                "sample_axis": {
+                                    "enabled": True,
+                                    "label": "Azimuth (deg)",
+                                    "ticks": 7,
+                                },
+                                "waveform": {"enabled": True, "stride": 4, "max_traces": 80},
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+        depth = np.linspace(1000.0, 1020.0, 120)
+        azimuth = np.linspace(0.0, 360.0, 72)
+        values = np.sin(depth[:, None] / 10.0) * np.cos(np.deg2rad(azimuth))[None, :]
+        dataset = WellDataset(name="array")
+        dataset.add_channel(
+            RasterChannel(
+                "VDL",
+                depth,
+                "m",
+                "amplitude",
+                values=values,
+                sample_axis=azimuth,
+                sample_unit="deg",
+                sample_label="azimuth",
+            )
+        )
+        renderer = MatplotlibRenderer()
+        with TemporaryDirectory() as tmp_dir:
+            output = Path(tmp_dir) / "array_track.pdf"
+            result = renderer.render(document, dataset, output_path=output)
+            self.assertTrue(output.exists())
+            self.assertEqual(result.page_count, 1)
+
+    def test_waveform_selection_is_consistent_across_windows(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "waveform selection",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "array",
+                        "title": "Array",
+                        "kind": "array",
+                        "width_mm": 40,
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "profile": "waveform",
+                                "waveform": {"enabled": True, "stride": 3, "max_traces": 10},
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        waveform = document.tracks[0].elements[0].waveform
+        depth = np.linspace(1000.0, 1099.0, 100)
+        renderer = MatplotlibRenderer()
+
+        first_window = renderer._select_waveform_indices(
+            depth,
+            window_top=1000.0,
+            window_base=1049.0,
+            waveform=waveform,
+        )
+        second_window = renderer._select_waveform_indices(
+            depth,
+            window_top=1050.0,
+            window_base=1099.0,
+            waveform=waveform,
+        )
+
+        expected = np.arange(depth.size, dtype=int)[:: waveform.stride]
+        downsample = int(np.ceil(expected.size / waveform.max_traces))
+        expected = expected[::downsample]
+        expected_first = expected[(depth[expected] >= 1000.0) & (depth[expected] <= 1049.0)]
+        expected_second = expected[(depth[expected] >= 1050.0) & (depth[expected] <= 1099.0)]
+
+        np.testing.assert_array_equal(first_window, expected_first)
+        np.testing.assert_array_equal(second_window, expected_second)
+
+    def test_waveform_selection_anchors_from_top_depth_for_descending_index(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "waveform descending",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "array",
+                        "title": "Array",
+                        "kind": "array",
+                        "width_mm": 40,
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "profile": "waveform",
+                                "waveform": {"enabled": True, "stride": 4},
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        waveform = document.tracks[0].elements[0].waveform
+        depth = np.linspace(1100.0, 1000.0, 101)  # descending storage order
+        renderer = MatplotlibRenderer()
+
+        selected = renderer._select_waveform_indices(
+            depth,
+            window_top=1000.0,
+            window_base=1100.0,
+            waveform=waveform,
+        )
+        top_depth_index = int(np.argmin(depth))
+        self.assertIn(top_depth_index, selected.tolist())
+        depth_selected = depth[selected]
+        expected = np.sort(np.argsort(depth, kind="mergesort")[:: waveform.stride])
+        np.testing.assert_array_equal(selected, expected)
+        self.assertTrue(np.all(np.isfinite(depth_selected)))
 
 
 if __name__ == "__main__":

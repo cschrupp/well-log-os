@@ -258,6 +258,51 @@ def _validate_document_bindings(
         kind = str(channel_cfg.get("kind", "curve")).strip().lower()
         if kind not in {"curve", "raster"}:
             raise TemplateValidationError(f"{context}.channels[{index}].kind is invalid.")
+        if kind == "raster":
+            if "profile" in channel_cfg:
+                profile = str(channel_cfg["profile"]).strip().lower()
+                if profile not in {"generic", "vdl", "waveform"}:
+                    raise TemplateValidationError(
+                        f"{context}.channels[{index}].profile must be generic, vdl, or waveform."
+                    )
+            if "normalization" in channel_cfg:
+                normalization = str(channel_cfg["normalization"]).strip().lower()
+                if normalization not in {"auto", "none", "trace_maxabs", "global_maxabs"}:
+                    raise TemplateValidationError(
+                        f"{context}.channels[{index}].normalization is invalid."
+                    )
+            if "waveform_normalization" in channel_cfg:
+                normalization = str(channel_cfg["waveform_normalization"]).strip().lower()
+                if normalization not in {"auto", "none", "trace_maxabs", "global_maxabs"}:
+                    raise TemplateValidationError(
+                        f"{context}.channels[{index}].waveform_normalization is invalid."
+                    )
+            if "show_raster" in channel_cfg and not isinstance(channel_cfg["show_raster"], bool):
+                raise TemplateValidationError(
+                    f"{context}.channels[{index}].show_raster must be boolean."
+                )
+            if "raster_alpha" in channel_cfg:
+                alpha = float(channel_cfg["raster_alpha"])
+                if alpha < 0 or alpha > 1:
+                    raise TemplateValidationError(
+                        f"{context}.channels[{index}].raster_alpha must be between 0 and 1."
+                    )
+            if "clip_percentiles" in channel_cfg:
+                percentiles = _ensure_sequence(
+                    channel_cfg["clip_percentiles"],
+                    context=f"{context}.channels[{index}].clip_percentiles",
+                )
+                if len(percentiles) != 2:
+                    raise TemplateValidationError(
+                        f"{context}.channels[{index}].clip_percentiles must contain two values."
+                    )
+                low = float(percentiles[0])
+                high = float(percentiles[1])
+                if low < 0 or low > 100 or high < 0 or high > 100 or low >= high:
+                    raise TemplateValidationError(
+                        f"{context}.channels[{index}].clip_percentiles must be increasing "
+                        "values within 0..100."
+                    )
         if "style" in channel_cfg:
             _ = _ensure_mapping(channel_cfg["style"], context=f"{context}.channels[{index}].style")
         if "scale" in channel_cfg:
@@ -299,6 +344,21 @@ def _validate_document_bindings(
                     raise TemplateValidationError(
                         f"{context}.channels[{index}].wrap.color must be non-empty."
                     )
+        if "colorbar" in channel_cfg:
+            _parse_binding_raster_colorbar(
+                channel_cfg["colorbar"],
+                context=f"{context}.channels[{index}].colorbar",
+            )
+        if "sample_axis" in channel_cfg:
+            _parse_binding_raster_sample_axis(
+                channel_cfg["sample_axis"],
+                context=f"{context}.channels[{index}].sample_axis",
+            )
+        if "waveform" in channel_cfg:
+            _parse_binding_raster_waveform(
+                channel_cfg["waveform"],
+                context=f"{context}.channels[{index}].waveform",
+            )
 
 
 def _parse_binding_wrap(value: Any, *, context: str) -> tuple[bool, str | None]:
@@ -316,6 +376,118 @@ def _parse_binding_wrap(value: Any, *, context: str) -> tuple[bool, str | None]:
     if not color_text:
         raise TemplateValidationError(f"{context}.color must be non-empty.")
     return enabled, color_text
+
+
+def _parse_binding_raster_colorbar(
+    value: Any, *, context: str
+) -> tuple[bool, str | None, str]:
+    if value is None:
+        return False, None, "right"
+    if isinstance(value, bool):
+        return value, None, "right"
+
+    colorbar = _ensure_mapping(value, context=context)
+    enabled = bool(colorbar.get("enabled", True))
+    position = str(colorbar.get("position", "right")).strip().lower()
+    if position not in {"right", "header"}:
+        raise TemplateValidationError(f"{context}.position must be right or header.")
+    label = colorbar.get("label")
+    if label is None:
+        return enabled, None, position
+    label_text = str(label).strip()
+    if not label_text:
+        raise TemplateValidationError(f"{context}.label must be non-empty.")
+    return enabled, label_text, position
+
+
+def _parse_binding_raster_sample_axis(
+    value: Any, *, context: str
+) -> tuple[bool, str | None, str | None, int, float | None, float | None]:
+    if value is None:
+        return False, None, None, 5, None, None
+    if isinstance(value, bool):
+        return value, None, None, 5, None, None
+
+    sample_axis = _ensure_mapping(value, context=context)
+    enabled = bool(sample_axis.get("enabled", True))
+    label = sample_axis.get("label")
+    label_text: str | None = None
+    if label is not None:
+        label_text = str(label).strip()
+        if not label_text:
+            raise TemplateValidationError(f"{context}.label must be non-empty.")
+    unit = sample_axis.get("unit")
+    unit_text: str | None = None
+    if unit is not None:
+        unit_text = str(unit).strip()
+        if not unit_text:
+            raise TemplateValidationError(f"{context}.unit must be non-empty.")
+    ticks = int(sample_axis.get("ticks", 5))
+    if ticks < 2:
+        raise TemplateValidationError(f"{context}.ticks must be at least 2.")
+    min_value = sample_axis.get("min")
+    max_value = sample_axis.get("max")
+    if (min_value is None) != (max_value is None):
+        raise TemplateValidationError(f"{context}.min and {context}.max must be set together.")
+    axis_min = float(min_value) if min_value is not None else None
+    axis_max = float(max_value) if max_value is not None else None
+    if axis_min is not None and axis_max is not None and np.isclose(axis_min, axis_max):
+        raise TemplateValidationError(f"{context}.min and {context}.max must differ.")
+    return enabled, label_text, unit_text, ticks, axis_min, axis_max
+
+
+def _parse_binding_raster_waveform(
+    value: Any,
+    *,
+    context: str,
+) -> dict[str, Any]:
+    if value is None:
+        return {"enabled": False}
+    if isinstance(value, bool):
+        return {"enabled": value}
+
+    waveform = _ensure_mapping(value, context=context)
+    payload: dict[str, Any] = {"enabled": bool(waveform.get("enabled", True))}
+    if "stride" in waveform:
+        stride = int(waveform["stride"])
+        if stride <= 0:
+            raise TemplateValidationError(f"{context}.stride must be positive.")
+        payload["stride"] = stride
+    if "amplitude_scale" in waveform:
+        amplitude_scale = float(waveform["amplitude_scale"])
+        if amplitude_scale <= 0:
+            raise TemplateValidationError(f"{context}.amplitude_scale must be positive.")
+        payload["amplitude_scale"] = amplitude_scale
+    if "color" in waveform:
+        color = str(waveform["color"]).strip()
+        if not color:
+            raise TemplateValidationError(f"{context}.color must be non-empty.")
+        payload["color"] = color
+    if "line_width" in waveform:
+        line_width = float(waveform["line_width"])
+        if line_width <= 0:
+            raise TemplateValidationError(f"{context}.line_width must be positive.")
+        payload["line_width"] = line_width
+    if "fill" in waveform:
+        payload["fill"] = bool(waveform["fill"])
+    if "positive_fill_color" in waveform:
+        color = str(waveform["positive_fill_color"]).strip()
+        if not color:
+            raise TemplateValidationError(f"{context}.positive_fill_color must be non-empty.")
+        payload["positive_fill_color"] = color
+    if "negative_fill_color" in waveform:
+        color = str(waveform["negative_fill_color"]).strip()
+        if not color:
+            raise TemplateValidationError(f"{context}.negative_fill_color must be non-empty.")
+        payload["negative_fill_color"] = color
+    if "invert_fill_polarity" in waveform:
+        payload["invert_fill_polarity"] = bool(waveform["invert_fill_polarity"])
+    if "max_traces" in waveform:
+        max_traces = int(waveform["max_traces"])
+        if max_traces <= 0:
+            raise TemplateValidationError(f"{context}.max_traces must be positive.")
+        payload["max_traces"] = max_traces
+    return payload
 
 
 def logfile_from_mapping(data: dict[str, Any]) -> LogFileSpec:
@@ -876,11 +1048,76 @@ def _build_tracks_from_layout_bindings(
             style = deepcopy(
                 _ensure_mapping(binding.get("style", {}), context=f"{binding_context}.style")
             )
+            colorbar_enabled, colorbar_label, colorbar_position = _parse_binding_raster_colorbar(
+                binding.get("colorbar"),
+                context=f"{binding_context}.colorbar",
+            )
+            (
+                sample_axis_enabled,
+                sample_axis_label,
+                sample_axis_unit,
+                sample_axis_ticks,
+                sample_axis_min,
+                sample_axis_max,
+            ) = (
+                _parse_binding_raster_sample_axis(
+                    binding.get("sample_axis"),
+                    context=f"{binding_context}.sample_axis",
+                )
+            )
+            profile = str(binding.get("profile", "generic")).strip().lower()
+            waveform_input = binding.get("waveform")
+            waveform = _parse_binding_raster_waveform(
+                waveform_input,
+                context=f"{binding_context}.waveform",
+            )
+            if profile == "waveform" and waveform_input is None:
+                waveform = {"enabled": True}
+            show_raster = bool(binding.get("show_raster", profile != "waveform"))
             element = {
                 "kind": "raster",
                 "channel": channel.mnemonic,
+                "label": str(binding.get("label", channel.mnemonic)),
                 "style": style,
+                "profile": profile,
+                "normalization": str(binding.get("normalization", "auto")),
+                "waveform_normalization": str(binding.get("waveform_normalization", "auto")),
                 "interpolation": str(binding.get("interpolation", "nearest")),
+                "show_raster": show_raster,
+                "raster_alpha": float(binding.get("raster_alpha", 1.0)),
+                "colorbar": (
+                    {
+                        "enabled": colorbar_enabled,
+                        "label": colorbar_label,
+                        "position": colorbar_position,
+                    }
+                    if colorbar_label is not None or colorbar_position != "right"
+                    else colorbar_enabled
+                ),
+                "sample_axis": (
+                    {
+                        "enabled": sample_axis_enabled,
+                        "label": sample_axis_label,
+                        "unit": sample_axis_unit,
+                        "ticks": sample_axis_ticks,
+                        "min": sample_axis_min,
+                        "max": sample_axis_max,
+                    }
+                    if (
+                        sample_axis_label is not None
+                        or sample_axis_unit is not None
+                        or sample_axis_ticks != 5
+                        or sample_axis_min is not None
+                        or sample_axis_max is not None
+                    )
+                    else sample_axis_enabled
+                ),
+                "waveform": waveform
+                if (
+                    len(waveform) > 1
+                    or waveform.get("enabled", False)
+                )
+                else waveform["enabled"],
             }
             if "color_limits" in binding:
                 limits = _ensure_sequence(
@@ -892,6 +1129,16 @@ def _build_tracks_from_layout_bindings(
                         f"{binding_context}.color_limits must contain two values."
                     )
                 element["color_limits"] = [float(limits[0]), float(limits[1])]
+            if "clip_percentiles" in binding:
+                percentiles = _ensure_sequence(
+                    binding["clip_percentiles"],
+                    context=f"{binding_context}.clip_percentiles",
+                )
+                if len(percentiles) != 2:
+                    raise TemplateValidationError(
+                        f"{binding_context}.clip_percentiles must contain two values."
+                    )
+                element["clip_percentiles"] = [float(percentiles[0]), float(percentiles[1])]
             track["elements"].append(element)
             continue
 

@@ -102,3 +102,21 @@ markers:
   callout_text_color: "#222222"
   callout_arrow_style: "-|>"
   callout_arrow_linewidth: 0.7
+raster:
+  colorbar_width_ratio: 0.06
+  colorbar_pad_ratio: 0.01
+  colorbar_tick_labelsize: 4.8
+  colorbar_label_fontsize: 5.4
+  colorbar_tick_color: "#333333"
+  colorbar_label_color: "#222222"
+  sample_axis_tick_labelsize: 5.0
+  sample_axis_label_fontsize: 5.4
+  sample_axis_tick_color: "#333333"
+  sample_axis_label_color: "#222222"
+  sample_axis_label_pad: 1.6
+  header_colorbar_text_color: "#222222"
+  header_colorbar_border_color: "#444444"
+  header_colorbar_border_linewidth: 0.5
+  header_colorbar_bar_center_y_ratio: 0.38
+  header_colorbar_bar_height_ratio: 0.26
+  header_colorbar_label_y_ratio: 0.76

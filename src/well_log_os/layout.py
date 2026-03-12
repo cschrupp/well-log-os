@@ -142,7 +142,7 @@ class LayoutEngine:
                 DepthWindow(
                     page_number=1,
                     start=start,
-                    stop=stop,
+                    stop=start + span_single,
                     unit=document.depth_axis.unit,
                 ),
             )
@@ -191,7 +191,25 @@ class LayoutEngine:
                     unit=document.depth_axis.unit,
                 )
             )
-        return tuple(windows)
+        normalized: list[DepthWindow] = []
+        for index, window in enumerate(windows):
+            if len(windows) == 1:
+                span = span_single
+            elif index == 0:
+                span = span_first
+            elif index == len(windows) - 1:
+                span = span_last
+            else:
+                span = span_middle
+            normalized.append(
+                DepthWindow(
+                    page_number=window.page_number,
+                    start=window.start,
+                    stop=window.start + span,
+                    unit=window.unit,
+                )
+            )
+        return tuple(normalized)
 
     def track_frames(self, document: LogDocument) -> tuple[TrackFrame, ...]:
         return self._track_frames_for_page(

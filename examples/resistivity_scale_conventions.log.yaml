@@ -102,6 +102,9 @@ document:
           kind: linear
           min: 0
           max: 100
+        wrap:
+          enabled: true
+          color: "#ff0000"
       - section: main
         channel: TT
         track_id: log_2_200

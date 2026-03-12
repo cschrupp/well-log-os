@@ -28,6 +28,7 @@ Decision history is tracked in `docs/decision-log.md`.
   - continuous single-page PDF
   - depth grid + markers/zones
   - structured track header object slots
+  - array-lane raster MVP controls (`colorbar`, `sample_axis` labels/ticks)
 - Plotly renderer provides interactive visualization baseline.
 - Synthetic example exists for fast iteration (`examples/synthetic_demo.py` + `examples/triple_combo.yaml`).
 - Log-file schema validation is implemented (JSON Schema + CLI `validate`).
@@ -163,8 +164,7 @@ Longer-term / UI-centric:
   - formatting and filtering rules
   - optional header summaries
 - Implement explicit `array` track options beyond raster baseline:
-  - sample-axis labeling
-  - array-specific legends/colorbars
+  - array-specific legends and advanced colorbar placement
   - per-track colormap presets
 - Implement first `annotation` track objects:
   - depth-linked text labels

@@ -249,7 +249,27 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "value_labels": {"$ref": "#/$defs/curveValueLabels"},
                 "header_display": {"$ref": "#/$defs/curveHeaderDisplay"},
                 "interpolation": {"type": "string"},
+                "profile": {"type": "string", "enum": ["generic", "vdl", "waveform"]},
+                "normalization": {
+                    "type": "string",
+                    "enum": ["auto", "none", "trace_maxabs", "global_maxabs"],
+                },
+                "waveform_normalization": {
+                    "type": "string",
+                    "enum": ["auto", "none", "trace_maxabs", "global_maxabs"],
+                },
+                "show_raster": {"type": "boolean"},
+                "raster_alpha": {"type": "number", "minimum": 0, "maximum": 1},
+                "colorbar": {"$ref": "#/$defs/rasterColorbar"},
+                "sample_axis": {"$ref": "#/$defs/rasterSampleAxis"},
+                "waveform": {"$ref": "#/$defs/rasterWaveform"},
                 "color_limits": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 2,
+                    "maxItems": 2,
+                },
+                "clip_percentiles": {
                     "type": "array",
                     "items": {"type": "number"},
                     "minItems": 2,
@@ -275,6 +295,7 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "track": {"$ref": "#/$defs/matplotlibStyleTrack"},
                 "grid": {"$ref": "#/$defs/matplotlibStyleGrid"},
                 "markers": {"$ref": "#/$defs/matplotlibStyleMarkers"},
+                "raster": {"$ref": "#/$defs/matplotlibStyleRaster"},
             },
         },
         "matplotlibStyleSectionTitle": {
@@ -420,6 +441,29 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "callout_text_color": {"type": "string", "minLength": 1},
                 "callout_arrow_style": {"type": "string", "minLength": 1},
                 "callout_arrow_linewidth": {"type": "number", "exclusiveMinimum": 0},
+            },
+        },
+        "matplotlibStyleRaster": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "colorbar_width_ratio": {"type": "number", "exclusiveMinimum": 0},
+                "colorbar_pad_ratio": {"type": "number", "minimum": 0},
+                "colorbar_tick_labelsize": {"type": "number", "exclusiveMinimum": 0},
+                "colorbar_label_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "colorbar_tick_color": {"type": "string", "minLength": 1},
+                "colorbar_label_color": {"type": "string", "minLength": 1},
+                "sample_axis_tick_labelsize": {"type": "number", "exclusiveMinimum": 0},
+                "sample_axis_label_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "sample_axis_tick_color": {"type": "string", "minLength": 1},
+                "sample_axis_label_color": {"type": "string", "minLength": 1},
+                "sample_axis_label_pad": {"type": "number"},
+                "header_colorbar_text_color": {"type": "string", "minLength": 1},
+                "header_colorbar_border_color": {"type": "string", "minLength": 1},
+                "header_colorbar_border_linewidth": {"type": "number", "exclusiveMinimum": 0},
+                "header_colorbar_bar_center_y_ratio": {"type": "number", "minimum": 0},
+                "header_colorbar_bar_height_ratio": {"type": "number", "minimum": 0},
+                "header_colorbar_label_y_ratio": {"type": "number", "minimum": 0},
             },
         },
         "referenceTrack": {
@@ -602,6 +646,69 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                     "properties": {
                         "enabled": {"type": "boolean"},
                         "color": {"type": "string", "minLength": 1},
+                    },
+                },
+            ]
+        },
+        "rasterColorbar": {
+            "anyOf": [
+                {"type": "boolean"},
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "label": {"type": "string", "minLength": 1},
+                        "position": {"type": "string", "enum": ["right", "header"]},
+                    },
+                },
+            ]
+        },
+        "rasterSampleAxis": {
+            "anyOf": [
+                {"type": "boolean"},
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "label": {"type": "string", "minLength": 1},
+                        "unit": {"type": "string", "minLength": 1},
+                        "ticks": {"type": "integer", "minimum": 2},
+                        "min": {"type": "number"},
+                        "max": {"type": "number"},
+                    },
+                    "allOf": [
+                        {
+                            "if": {
+                                "anyOf": [
+                                    {"required": ["min"]},
+                                    {"required": ["max"]},
+                                ]
+                            },
+                            "then": {"required": ["min", "max"]},
+                        }
+                    ],
+                },
+            ]
+        },
+        "rasterWaveform": {
+            "anyOf": [
+                {"type": "boolean"},
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "stride": {"type": "integer", "minimum": 1},
+                        "amplitude_scale": {"type": "number", "exclusiveMinimum": 0},
+                        "color": {"type": "string", "minLength": 1},
+                        "line_width": {"type": "number", "exclusiveMinimum": 0},
+                        "fill": {"type": "boolean"},
+                        "positive_fill_color": {"type": "string", "minLength": 1},
+                        "negative_fill_color": {"type": "string", "minLength": 1},
+                        "invert_fill_polarity": {"type": "boolean"},
+                        "max_traces": {"type": "integer", "minimum": 1},
                     },
                 },
             ]

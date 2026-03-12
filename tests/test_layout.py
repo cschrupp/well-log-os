@@ -40,6 +40,47 @@ class LayoutTests(unittest.TestCase):
         self.assertGreaterEqual(len(layout), 2)
         self.assertEqual(layout[0].track_frames[1].track.id, "gr")
 
+    def test_pagination_keeps_constant_depth_scale_on_last_page(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "constant scale",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {"id": "depth", "title": "Depth", "kind": "depth", "width_mm": 16},
+                    {"id": "gr", "title": "GR", "kind": "curve", "width_mm": 25, "elements": []},
+                ],
+            }
+        )
+        dataset = self.build_dataset()
+        engine = LayoutEngine()
+        windows = engine.paginate(document, dataset)
+        self.assertGreaterEqual(len(windows), 2)
+
+        span_first = engine._depth_span_for_page(
+            document,
+            document.page,
+            reserve_top_track_header=True,
+            reserve_bottom_track_header=False,
+        )
+        span_middle = engine._depth_span_for_page(
+            document,
+            document.page,
+            reserve_top_track_header=False,
+            reserve_bottom_track_header=False,
+        )
+        span_last = engine._depth_span_for_page(
+            document,
+            document.page,
+            reserve_top_track_header=False,
+            reserve_bottom_track_header=True,
+        )
+        self.assertAlmostEqual(windows[0].stop - windows[0].start, span_first, places=6)
+        if len(windows) > 2:
+            for window in windows[1:-1]:
+                self.assertAlmostEqual(window.stop - window.start, span_middle, places=6)
+        self.assertAlmostEqual(windows[-1].stop - windows[-1].start, span_last, places=6)
+
     def test_default_page_spacing_starts_tracks_at_page_origin(self) -> None:
         document = document_from_mapping(
             {

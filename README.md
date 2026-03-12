@@ -77,6 +77,7 @@ See [examples/triple_combo.yaml](examples/triple_combo.yaml).
 For scale/grid behavior examples, see [examples/log_scale_options.log.yaml](examples/log_scale_options.log.yaml).
 For resistivity-style scales and wrapped log demo, see
 [examples/resistivity_scale_conventions.log.yaml](examples/resistivity_scale_conventions.log.yaml).
+For array-lane MVP config, see [examples/cbl_vdl_array_mvp.log.yaml](examples/cbl_vdl_array_mvp.log.yaml).
 
 ## Template + Savefile Model
 
@@ -108,6 +109,12 @@ Behavior:
 - Curves support wrapping across curve-capable tracks (`reference`, `normal`, `array`):
   - `wrap: true` to enable with default curve color.
   - `wrap: { enabled: true, color: "#ef4444" }` to color wrapped segments explicitly.
+- Raster bindings support display controls:
+  - `profile` (`generic` or `vdl`)
+  - `normalization` (`auto`, `none`, `trace_maxabs`, `global_maxabs`)
+  - `colorbar` (`true/false` or `{ enabled, label, position }`)
+  - `sample_axis` (`true/false` or `{ enabled, label, unit, ticks, min, max }`)
+  - `waveform` (`true/false` or `{ enabled, stride, amplitude_scale, color, line_width, max_traces }`)
 - Multiple curves per track are supported by assigning multiple bindings to the same `track_id`.
 - Section placeholders are first-class in YAML:
   - `document.layout.heading`
@@ -169,6 +176,12 @@ Or pass a specific log file:
 
 ```bash
 uv run examples/real_data_demo.py examples/cbl_main.log.yaml
+```
+
+Array-track demo with synthetic VDL data and logfile config:
+
+```bash
+uv run examples/cbl_vdl_array_mvp_demo.py
 ```
 
 Use [templates/wireline_base.template.yaml](templates/wireline_base.template.yaml) as a reusable

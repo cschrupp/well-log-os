@@ -254,3 +254,57 @@ document:
 Wrapping applies to curves in `reference`, `normal`, and `array` tracks.
 It folds out-of-range curve values into the configured scale interval and can
 render wrapped sections in a separate color (`wrap.color`).
+
+## 11) Array Display Options (MVP)
+
+Raster bindings in array tracks support:
+
+- `profile`: `generic` or `vdl`
+- `normalization`: `auto`, `none`, `trace_maxabs`, `global_maxabs`
+- `colorbar`: `true/false` or object `{ enabled, label, position }`
+- `sample_axis`: `true/false` or object `{ enabled, label, unit, ticks, min, max }`
+- `waveform`: `true/false` or object
+  `{ enabled, stride, amplitude_scale, color, line_width, max_traces }`
+- existing raster options:
+  - `style.colormap`
+  - `interpolation`
+  - `color_limits`
+  - `clip_percentiles`
+
+Example:
+
+```yaml
+document:
+  bindings:
+    channels:
+      - channel: VDL
+        track_id: vdl_array
+        kind: raster
+        profile: vdl
+        normalization: auto
+        style: { colormap: gray_r }
+        interpolation: nearest
+        clip_percentiles: [1, 99]
+        colorbar:
+          enabled: true
+          label: Amplitude
+          position: header
+        sample_axis:
+          enabled: false
+          unit: us
+          min: 200
+          max: 1200
+          ticks: 7
+        waveform:
+          enabled: true
+          stride: 5
+          amplitude_scale: 0.35
+          color: "#5b3f8c"
+          line_width: 0.22
+          max_traces: 700
+```
+
+Reference example files:
+
+- [examples/cbl_vdl_array_mvp.log.yaml](../examples/cbl_vdl_array_mvp.log.yaml)
+- [examples/cbl_vdl_array_mvp_demo.py](../examples/cbl_vdl_array_mvp_demo.py)
