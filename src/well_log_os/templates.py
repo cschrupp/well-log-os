@@ -10,6 +10,9 @@ import yaml
 from .errors import TemplateValidationError
 from .model import (
     CurveElement,
+    CurveFillCrossoverSpec,
+    CurveFillKind,
+    CurveFillSpec,
     CurveHeaderDisplaySpec,
     CurveValueLabelsSpec,
     DepthAxisSpec,
@@ -552,6 +555,67 @@ def _build_curve_header_display(data: Any) -> CurveHeaderDisplaySpec:
     )
 
 
+def _build_curve_fill(data: Any) -> CurveFillSpec | None:
+    if data is None:
+        return None
+    fill_data = _ensure_mapping(data, context="curve.fill")
+    kind_text = str(fill_data.get("kind", "")).strip().lower()
+    try:
+        kind = CurveFillKind(kind_text)
+    except ValueError as exc:
+        raise TemplateValidationError("Invalid curve.fill.kind.") from exc
+
+    other_channel: str | None = None
+    other_element_id: str | None = None
+    if kind == CurveFillKind.BETWEEN_CURVES:
+        other_channel = str(fill_data.get("other_channel", "")).strip()
+        if not other_channel:
+            raise TemplateValidationError("curve.fill.other_channel must be non-empty.")
+    elif kind == CurveFillKind.BETWEEN_INSTANCES:
+        other_element_id = str(fill_data.get("other_element_id", "")).strip()
+        if not other_element_id:
+            raise TemplateValidationError("curve.fill.other_element_id must be non-empty.")
+
+    crossover_data = fill_data.get("crossover")
+    if crossover_data is None:
+        crossover = CurveFillCrossoverSpec()
+    else:
+        mapping = _ensure_mapping(crossover_data, context="curve.fill.crossover")
+        try:
+            crossover = CurveFillCrossoverSpec(
+                enabled=bool(mapping.get("enabled", True)),
+                left_color=(
+                    str(mapping["left_color"]).strip()
+                    if mapping.get("left_color") is not None
+                    else None
+                ),
+                right_color=(
+                    str(mapping["right_color"]).strip()
+                    if mapping.get("right_color") is not None
+                    else None
+                ),
+                alpha=(
+                    float(mapping["alpha"])
+                    if mapping.get("alpha") is not None
+                    else None
+                ),
+            )
+        except (TypeError, ValueError) as exc:
+            raise TemplateValidationError("Invalid curve.fill.crossover configuration.") from exc
+
+    try:
+        return CurveFillSpec(
+            kind=kind,
+            other_channel=other_channel,
+            other_element_id=other_element_id,
+            color=str(fill_data["color"]).strip() if fill_data.get("color") is not None else None,
+            alpha=float(fill_data["alpha"]) if fill_data.get("alpha") is not None else None,
+            crossover=crossover,
+        )
+    except (TypeError, ValueError) as exc:
+        raise TemplateValidationError("Invalid curve.fill configuration.") from exc
+
+
 def _build_header(data: Mapping[str, Any] | None) -> HeaderSpec:
     if not data:
         return HeaderSpec()
@@ -692,6 +756,11 @@ def _build_track(track_data: Mapping[str, Any]) -> TrackSpec:
                 wrap_color = wrap_color_text
             elements.append(
                 CurveElement(
+                    id=(
+                        str(element_data["id"]).strip()
+                        if element_data.get("id") is not None
+                        else None
+                    ),
                     channel=str(element_data["channel"]),
                     label=element_data.get("label"),
                     style=_build_style(element_data.get("style")),
@@ -701,6 +770,7 @@ def _build_track(track_data: Mapping[str, Any]) -> TrackSpec:
                     render_mode=str(element_data.get("render_mode", "line")),
                     value_labels=_build_curve_value_labels(element_data.get("value_labels")),
                     header_display=_build_curve_header_display(element_data.get("header_display")),
+                    fill=_build_curve_fill(element_data.get("fill")),
                 )
             )
         elif element_kind in {"raster", "image"}:

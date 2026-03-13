@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import os
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import yaml
 
-from ..errors import DependencyUnavailableError
+from ..errors import DependencyUnavailableError, TemplateValidationError
 from ..layout import LayoutEngine
 from ..model import (
     CurveElement,
+    CurveFillKind,
     FooterSpec,
     GridDisplayMode,
     GridScaleKind,
@@ -62,6 +63,16 @@ def _deep_merge_dicts(base: dict[str, Any], overrides: dict[str, Any]) -> dict[s
         else:
             merged[key] = value
     return merged
+
+
+@dataclass(slots=True)
+class _CurvePlotData:
+    depth: np.ndarray
+    raw_values: np.ndarray
+    plot_values: np.ndarray
+    valid_mask: np.ndarray
+    wrapped_mask: np.ndarray
+    scale: Any
 
 
 class MatplotlibRenderer(Renderer):
@@ -2549,6 +2560,299 @@ class MatplotlibRenderer(Renderer):
         normalized[mask] = np.clip(scaled, 0.0, 1.0)
         return normalized, mask
 
+    def _curve_plot_data(
+        self,
+        track,
+        element: CurveElement,
+        document,
+        dataset,
+        *,
+        independent_curve_scales: bool,
+    ) -> _CurvePlotData:
+        channel = dataset.get_channel(element.channel)
+        if not isinstance(channel, ScalarChannel):
+            raise TypeError(f"Curve element {element.channel} requires a scalar channel.")
+
+        depth = channel.depth_in(document.depth_axis.unit, self.registry)
+        values = channel.masked_values()
+        scale = element.scale or track.x_scale
+        plot_values = values
+        valid_mask = np.isfinite(values)
+        wrapped_mask = np.zeros(values.shape, dtype=bool)
+
+        if element.wrap and scale is not None:
+            plot_values, valid_mask, wrapped_mask = self._wrap_curve_values(values, scale)
+
+        if scale is not None and scale.kind == ScaleKind.TANGENTIAL:
+            plot_values, normalized_mask = self._normalize_curve_values(plot_values, scale)
+            valid_mask &= normalized_mask
+            wrapped_mask &= valid_mask
+            return _CurvePlotData(depth, values, plot_values, valid_mask, wrapped_mask, scale)
+
+        if independent_curve_scales:
+            plot_values, normalized_mask = self._normalize_curve_values(plot_values, scale)
+            valid_mask &= normalized_mask
+            wrapped_mask &= valid_mask
+            return _CurvePlotData(depth, values, plot_values, valid_mask, wrapped_mask, scale)
+
+        if scale is not None and scale.kind == ScaleKind.LOG:
+            valid_mask &= plot_values > 0
+            wrapped_mask &= valid_mask
+
+        return _CurvePlotData(depth, values, plot_values, valid_mask, wrapped_mask, scale)
+
+    def _scales_match(self, first, second) -> bool:
+        if first is None and second is None:
+            return True
+        if (first is None) != (second is None):
+            return False
+        assert first is not None and second is not None
+        return (
+            first.kind == second.kind
+            and np.isclose(first.minimum, second.minimum)
+            and np.isclose(first.maximum, second.maximum)
+            and first.reverse == second.reverse
+        )
+
+    def _curves_share_fill_axis(
+        self,
+        track,
+        primary: CurveElement,
+        secondary: CurveElement,
+        *,
+        independent_curve_scales: bool,
+    ) -> bool:
+        primary_scale = primary.scale or track.x_scale
+        secondary_scale = secondary.scale or track.x_scale
+        if independent_curve_scales and (primary_scale is None or secondary_scale is None):
+            return False
+        return self._scales_match(primary_scale, secondary_scale)
+
+    def _find_track_curves(
+        self,
+        track,
+        channel_name: str,
+        *,
+        exclude: CurveElement,
+    ) -> list[CurveElement]:
+        target = channel_name.strip().upper()
+        matches: list[CurveElement] = []
+        for element in self._curve_elements(track):
+            if element is exclude:
+                continue
+            if element.channel.upper() == target:
+                matches.append(element)
+        return matches
+
+    def _find_track_curve_by_id(
+        self,
+        track,
+        element_id: str,
+        *,
+        exclude: CurveElement,
+    ) -> CurveElement | None:
+        target = element_id.strip()
+        for element in self._curve_elements(track):
+            if element is exclude:
+                continue
+            if element.id == target:
+                return element
+        return None
+
+    def _align_curve_fill_values(
+        self,
+        reference_depth: np.ndarray,
+        reference_mask: np.ndarray,
+        source_data: _CurvePlotData,
+    ) -> np.ndarray:
+        if (
+            source_data.depth.shape == reference_depth.shape
+            and np.allclose(source_data.depth, reference_depth, equal_nan=True)
+        ):
+            return np.where(source_data.valid_mask, source_data.plot_values, np.nan)
+
+        aligned = np.full(reference_depth.shape, np.nan, dtype=float)
+        mask = source_data.valid_mask & np.isfinite(source_data.depth) & np.isfinite(
+            source_data.plot_values
+        )
+        if np.count_nonzero(mask) < 2:
+            return aligned
+
+        source_depth = source_data.depth[mask]
+        source_values = source_data.plot_values[mask]
+        order = np.argsort(source_depth, kind="mergesort")
+        source_depth = source_depth[order]
+        source_values = source_values[order]
+        unique_depth, unique_indices = np.unique(source_depth, return_index=True)
+        if unique_depth.size < 2:
+            return aligned
+        unique_values = source_values[unique_indices]
+        interpolated = np.interp(
+            reference_depth,
+            unique_depth,
+            unique_values,
+            left=np.nan,
+            right=np.nan,
+        )
+        return np.where(reference_mask, interpolated, np.nan)
+
+    def _resolved_curve_fill_color(self, element: CurveElement) -> str:
+        assert element.fill is not None
+        if element.fill.color is not None:
+            return element.fill.color
+        if element.style.fill_color is not None:
+            return element.style.fill_color
+        return element.style.color
+
+    def _resolved_curve_fill_alpha(self, element: CurveElement) -> float:
+        assert element.fill is not None
+        if element.fill.alpha is not None:
+            return element.fill.alpha
+        return element.style.fill_alpha
+
+    def _draw_curve_fill(
+        self,
+        ax,
+        track,
+        element: CurveElement,
+        document,
+        dataset,
+        *,
+        independent_curve_scales: bool,
+    ) -> None:
+        if element.fill is None:
+            return
+        if element.wrap:
+            raise TemplateValidationError(
+                f"Curve fill for {element.channel!r} does not support wrapped curves yet."
+            )
+        if element.fill.kind == CurveFillKind.BETWEEN_CURVES:
+            assert element.fill.other_channel is not None
+            candidates = self._find_track_curves(
+                track,
+                element.fill.other_channel,
+                exclude=element,
+            )
+            if not candidates:
+                raise TemplateValidationError(
+                    f"Curve fill for {element.channel!r} references missing channel "
+                    f"{element.fill.other_channel!r} in track {track.id!r}."
+                )
+            compatible = [
+                candidate
+                for candidate in candidates
+                if self._curves_share_fill_axis(
+                    track,
+                    element,
+                    candidate,
+                    independent_curve_scales=independent_curve_scales,
+                )
+            ]
+            if not compatible:
+                raise TemplateValidationError(
+                    f"Curve fill between {element.channel!r} and {element.fill.other_channel!r} "
+                    "requires matching effective scales."
+                )
+            other = compatible[0]
+        elif element.fill.kind == CurveFillKind.BETWEEN_INSTANCES:
+            assert element.fill.other_element_id is not None
+            other = self._find_track_curve_by_id(
+                track,
+                element.fill.other_element_id,
+                exclude=element,
+            )
+            if other is None:
+                raise TemplateValidationError(
+                    f"Curve fill for {element.channel!r} references missing curve id "
+                    f"{element.fill.other_element_id!r} in track {track.id!r}."
+                )
+        else:
+            raise TemplateValidationError(
+                f"Curve fill kind {element.fill.kind!s} is not implemented yet."
+            )
+        if other.wrap:
+            raise TemplateValidationError(
+                f"Curve fill for {element.channel!r} cannot target wrapped curve "
+                f"{other.channel!r} yet."
+            )
+
+        primary_data = self._curve_plot_data(
+            track,
+            element,
+            document,
+            dataset,
+            independent_curve_scales=independent_curve_scales,
+        )
+        secondary_data = self._curve_plot_data(
+            track,
+            other,
+            document,
+            dataset,
+            independent_curve_scales=independent_curve_scales,
+        )
+        secondary_values = self._align_curve_fill_values(
+            primary_data.depth,
+            primary_data.valid_mask,
+            secondary_data,
+        )
+        valid_mask = (
+            primary_data.valid_mask
+            & np.isfinite(primary_data.plot_values)
+            & np.isfinite(secondary_values)
+        )
+        if not np.any(valid_mask):
+            return
+
+        alpha = self._resolved_curve_fill_alpha(element)
+        if element.fill.crossover.enabled:
+            left_color = element.fill.crossover.left_color or self._resolved_curve_fill_color(
+                element
+            )
+            right_color = element.fill.crossover.right_color or self._resolved_curve_fill_color(
+                element
+            )
+            crossover_alpha = (
+                element.fill.crossover.alpha
+                if element.fill.crossover.alpha is not None
+                else alpha
+            )
+            left_mask = valid_mask & (primary_data.plot_values < secondary_values)
+            right_mask = valid_mask & (primary_data.plot_values > secondary_values)
+            if np.any(left_mask):
+                ax.fill_betweenx(
+                    primary_data.depth,
+                    primary_data.plot_values,
+                    secondary_values,
+                    where=left_mask,
+                    facecolor=left_color,
+                    alpha=crossover_alpha,
+                    linewidth=0.0,
+                    interpolate=True,
+                )
+            if np.any(right_mask):
+                ax.fill_betweenx(
+                    primary_data.depth,
+                    primary_data.plot_values,
+                    secondary_values,
+                    where=right_mask,
+                    facecolor=right_color,
+                    alpha=crossover_alpha,
+                    linewidth=0.0,
+                    interpolate=True,
+                )
+            return
+
+        ax.fill_betweenx(
+            primary_data.depth,
+            primary_data.plot_values,
+            secondary_values,
+            where=valid_mask,
+            facecolor=self._resolved_curve_fill_color(element),
+            alpha=alpha,
+            linewidth=0.0,
+            interpolate=True,
+        )
+
     def _plot_curve_with_wrap_segments(
         self,
         ax,
@@ -2595,44 +2899,45 @@ class MatplotlibRenderer(Renderer):
         *,
         independent_curve_scales: bool = False,
     ) -> None:
-        channel = dataset.get_channel(element.channel)
-        if not isinstance(channel, ScalarChannel):
-            raise TypeError(f"Curve element {element.channel} requires a scalar channel.")
-        depth = channel.depth_in(document.depth_axis.unit, self.registry)
-        values = channel.masked_values()
-        scale = element.scale or track.x_scale
-        wrapped_values = values
-        wrapped_valid_mask = np.isfinite(values)
-        wrapped_section_mask = np.zeros(values.shape, dtype=bool)
-        if element.wrap and scale is not None:
-            wrapped_values, wrapped_valid_mask, wrapped_section_mask = self._wrap_curve_values(
-                values,
-                scale,
+        plot_data = self._curve_plot_data(
+            track,
+            element,
+            document,
+            dataset,
+            independent_curve_scales=independent_curve_scales,
+        )
+        depth = plot_data.depth
+        values = plot_data.raw_values
+        scale = plot_data.scale
+
+        if element.render_mode == "line":
+            self._draw_curve_fill(
+                ax,
+                track,
+                element,
+                document,
+                dataset,
+                independent_curve_scales=independent_curve_scales,
             )
 
         if scale is not None and scale.kind == ScaleKind.TANGENTIAL:
-            normalized_values, value_mask = self._normalize_curve_values(
-                wrapped_values,
-                scale,
-            )
-            value_mask &= wrapped_valid_mask
             if element.render_mode == "value_labels":
                 self._draw_curve_value_labels(
                     ax,
                     depth,
-                    normalized_values,
+                    plot_data.plot_values,
                     element,
                     scale,
                     text_values=values,
-                    value_mask=value_mask,
+                    value_mask=plot_data.valid_mask,
                 )
             else:
                 self._plot_curve_with_wrap_segments(
                     ax,
                     depth,
-                    normalized_values,
-                    value_mask,
-                    wrapped_section_mask & value_mask,
+                    plot_data.plot_values,
+                    plot_data.valid_mask,
+                    plot_data.wrapped_mask,
                     element,
                 )
             if scale.reverse:
@@ -2642,28 +2947,23 @@ class MatplotlibRenderer(Renderer):
             return
 
         if independent_curve_scales:
-            normalized_values, value_mask = self._normalize_curve_values(
-                wrapped_values,
-                scale,
-            )
-            value_mask &= wrapped_valid_mask
             if element.render_mode == "value_labels":
                 self._draw_curve_value_labels(
                     ax,
                     depth,
-                    normalized_values,
+                    plot_data.plot_values,
                     element,
                     scale,
                     text_values=values,
-                    value_mask=value_mask,
+                    value_mask=plot_data.valid_mask,
                 )
                 return
             self._plot_curve_with_wrap_segments(
                 ax,
                 depth,
-                normalized_values,
-                value_mask,
-                wrapped_section_mask & value_mask,
+                plot_data.plot_values,
+                plot_data.valid_mask,
+                plot_data.wrapped_mask,
                 element,
             )
             return
@@ -2678,29 +2978,29 @@ class MatplotlibRenderer(Renderer):
             self._draw_curve_value_labels(
                 ax,
                 depth,
-                wrapped_values,
+                plot_data.plot_values,
                 element,
                 scale,
                 text_values=values if element.wrap else None,
-                value_mask=wrapped_valid_mask,
+                value_mask=plot_data.valid_mask,
             )
         elif scale is not None and scale.kind == ScaleKind.LOG:
             ax.set_xscale("log")
             self._plot_curve_with_wrap_segments(
                 ax,
                 depth,
-                wrapped_values,
-                wrapped_valid_mask & (wrapped_values > 0),
-                wrapped_section_mask,
+                plot_data.plot_values,
+                plot_data.valid_mask,
+                plot_data.wrapped_mask,
                 element,
             )
         else:
             self._plot_curve_with_wrap_segments(
                 ax,
                 depth,
-                wrapped_values,
-                wrapped_valid_mask,
-                wrapped_section_mask,
+                plot_data.plot_values,
+                plot_data.valid_mask,
+                plot_data.wrapped_mask,
                 element,
             )
         if scale is not None and scale.reverse:

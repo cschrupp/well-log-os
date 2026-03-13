@@ -82,6 +82,11 @@ class RasterColorbarPosition(StrEnum):
     HEADER = "header"
 
 
+class CurveFillKind(StrEnum):
+    BETWEEN_CURVES = "between_curves"
+    BETWEEN_INSTANCES = "between_instances"
+
+
 @dataclass(slots=True)
 class StyleSpec:
     color: str = "black"
@@ -285,8 +290,59 @@ class CurveHeaderDisplaySpec:
 
 
 @dataclass(slots=True)
+class CurveFillCrossoverSpec:
+    enabled: bool = False
+    left_color: str | None = None
+    right_color: str | None = None
+    alpha: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.left_color is not None and not str(self.left_color).strip():
+            raise ValueError("Curve fill crossover left_color must be non-empty when provided.")
+        if self.right_color is not None and not str(self.right_color).strip():
+            raise ValueError("Curve fill crossover right_color must be non-empty when provided.")
+        if self.alpha is not None and (self.alpha < 0 or self.alpha > 1):
+            raise ValueError("Curve fill crossover alpha must be between 0 and 1.")
+
+
+@dataclass(slots=True)
+class CurveFillSpec:
+    kind: CurveFillKind
+    other_channel: str | None = None
+    other_element_id: str | None = None
+    color: str | None = None
+    alpha: float | None = None
+    crossover: CurveFillCrossoverSpec = field(default_factory=CurveFillCrossoverSpec)
+
+    def __post_init__(self) -> None:
+        if self.other_channel is not None:
+            self.other_channel = str(self.other_channel).strip()
+            if not self.other_channel:
+                raise ValueError("Curve fill other_channel must be non-empty when provided.")
+        if self.other_element_id is not None:
+            self.other_element_id = str(self.other_element_id).strip()
+            if not self.other_element_id:
+                raise ValueError("Curve fill other_element_id must be non-empty when provided.")
+        if self.kind == CurveFillKind.BETWEEN_CURVES:
+            if self.other_channel is None:
+                raise ValueError("Curve fill between_curves requires other_channel.")
+            if self.other_element_id is not None:
+                raise ValueError("Curve fill between_curves does not accept other_element_id.")
+        if self.kind == CurveFillKind.BETWEEN_INSTANCES:
+            if self.other_element_id is None:
+                raise ValueError("Curve fill between_instances requires other_element_id.")
+            if self.other_channel is not None:
+                raise ValueError("Curve fill between_instances does not accept other_channel.")
+        if self.color is not None and not str(self.color).strip():
+            raise ValueError("Curve fill color must be non-empty when provided.")
+        if self.alpha is not None and (self.alpha < 0 or self.alpha > 1):
+            raise ValueError("Curve fill alpha must be between 0 and 1.")
+
+
+@dataclass(slots=True)
 class CurveElement:
     channel: str
+    id: str | None = None
     label: str | None = None
     style: StyleSpec = field(default_factory=StyleSpec)
     scale: ScaleSpec | None = None
@@ -295,8 +351,11 @@ class CurveElement:
     render_mode: str = "line"
     value_labels: CurveValueLabelsSpec = field(default_factory=CurveValueLabelsSpec)
     header_display: CurveHeaderDisplaySpec = field(default_factory=CurveHeaderDisplaySpec)
+    fill: CurveFillSpec | None = None
 
     def __post_init__(self) -> None:
+        if self.id is not None and not str(self.id).strip():
+            raise ValueError("Curve id must be non-empty when provided.")
         if not isinstance(self.wrap, bool):
             raise ValueError("Curve wrap must be boolean.")
         if self.wrap_color is not None and not str(self.wrap_color).strip():
@@ -520,6 +579,13 @@ class TrackSpec:
     def __post_init__(self) -> None:
         if self.width_mm <= 0:
             raise ValueError(f"Track {self.id} width must be positive.")
+        element_ids = [
+            element.id
+            for element in self.elements
+            if isinstance(element, CurveElement) and element.id is not None
+        ]
+        if len(set(element_ids)) != len(element_ids):
+            raise ValueError(f"Track {self.id} contains duplicate curve ids.")
         if self.kind == TrackKind.REFERENCE:
             if self.reference is None:
                 self.reference = ReferenceTrackSpec()

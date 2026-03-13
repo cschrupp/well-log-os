@@ -16,7 +16,14 @@ from well_log_os.logfile import (
     load_logfile,
     logfile_from_mapping,
 )
-from well_log_os.model import GridScaleKind, RasterChannel, ScalarChannel, ScaleKind, WellDataset
+from well_log_os.model import (
+    CurveFillKind,
+    GridScaleKind,
+    RasterChannel,
+    ScalarChannel,
+    ScaleKind,
+    WellDataset,
+)
 
 
 def build_mapping() -> dict:
@@ -494,6 +501,103 @@ class LogFileTests(unittest.TestCase):
         self.assertEqual(curve.scale.kind, ScaleKind.LOG)
         self.assertTrue(curve.wrap)
         self.assertEqual(curve.wrap_color, "#ff5500")
+
+    def test_binding_can_parse_between_curves_fill(self) -> None:
+        payload = build_mapping()
+        payload["document"]["layout"]["log_sections"][0]["tracks"] = [
+            {
+                "id": "porosity",
+                "title": "Porosity",
+                "kind": "normal",
+                "width_mm": 28,
+                "position": 1,
+            }
+        ]
+        payload["document"]["bindings"]["channels"] = [
+            {
+                "channel": "GR",
+                "track_id": "porosity",
+                "kind": "curve",
+                "label": "NPHI",
+                "scale": {"kind": "linear", "min": 0, "max": 150},
+                "fill": {
+                    "kind": "between_curves",
+                    "other_channel": "RT",
+                    "color": "#22c55e",
+                    "alpha": 0.25,
+                    "crossover": {
+                        "enabled": True,
+                        "left_color": "#22c55e",
+                        "right_color": "#ef4444",
+                    },
+                },
+            },
+            {
+                "channel": "RT",
+                "track_id": "porosity",
+                "kind": "curve",
+                "label": "DPHI",
+                "scale": {"kind": "linear", "min": 0, "max": 150},
+            },
+        ]
+        spec = logfile_from_mapping(payload)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("example_input.las"),
+        )
+        curve = document.tracks[0].elements[0]
+        assert curve.fill is not None
+        self.assertEqual(curve.fill.kind, CurveFillKind.BETWEEN_CURVES)
+        self.assertEqual(curve.fill.other_channel, "RT")
+        self.assertEqual(curve.fill.color, "#22c55e")
+        self.assertTrue(curve.fill.crossover.enabled)
+        self.assertEqual(curve.fill.crossover.left_color, "#22c55e")
+        self.assertEqual(curve.fill.crossover.right_color, "#ef4444")
+
+    def test_binding_can_parse_between_instances_fill(self) -> None:
+        payload = build_mapping()
+        payload["document"]["layout"]["log_sections"][0]["tracks"] = [
+            {
+                "id": "cbl",
+                "title": "CBL",
+                "kind": "normal",
+                "width_mm": 28,
+                "position": 1,
+            }
+        ]
+        payload["document"]["bindings"]["channels"] = [
+            {
+                "id": "cbl_0_100",
+                "channel": "GR",
+                "track_id": "cbl",
+                "kind": "curve",
+                "scale": {"kind": "linear", "min": 0, "max": 150},
+                "fill": {
+                    "kind": "between_instances",
+                    "other_element_id": "cbl_0_10",
+                    "color": "#d1d5db",
+                },
+            },
+            {
+                "id": "cbl_0_10",
+                "channel": "GR",
+                "track_id": "cbl",
+                "kind": "curve",
+                "scale": {"kind": "linear", "min": 0, "max": 10},
+            },
+        ]
+        spec = logfile_from_mapping(payload)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("example_input.las"),
+        )
+        curve = document.tracks[0].elements[0]
+        self.assertEqual(curve.id, "cbl_0_100")
+        assert curve.fill is not None
+        self.assertEqual(curve.fill.kind, CurveFillKind.BETWEEN_INSTANCES)
+        self.assertEqual(curve.fill.other_element_id, "cbl_0_10")
 
     def test_raster_binding_parses_array_display_options(self) -> None:
         payload = build_mapping()

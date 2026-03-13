@@ -1,0 +1,244 @@
+template:
+  path: ../templates/wireline_base.template.yaml
+version: 1
+name: CBL Feature Showcase
+render:
+  output_path: ../workspace/renders/CBL_feature_showcase.pdf
+  dpi: 300
+  continuous_strip_page_height_mm: 297
+document:
+  depth_range:
+    - 70
+    - 210
+  page:
+    margin_left_mm: 0
+    margin_right_mm: 8
+    margin_top_mm: 0
+    margin_bottom_mm: 0
+    track_gap_mm: 0
+    header_height_mm: 0
+    track_header_height_mm: 28
+    footer_height_mm: 0
+  layout:
+    heading:
+      enabled: false
+    comments: []
+    log_sections:
+      - id: main
+        title: CBL Feature Showcase
+        subtitle: Curves, crossover fill, and VDL array
+        data:
+          source_path: ../workspace/data/CBL_Main.dlis
+          source_format: dlis
+        tracks:
+          - id: combo
+            title: ""
+            kind: normal
+            width_mm: 56
+            position: 1
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 4
+                  spacing_mode: count
+                secondary:
+                  scale: linear
+                  line_count: 5
+                  spacing_mode: count
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: depth
+            title: ""
+            kind: reference
+            width_mm: 14
+            position: 2
+            reference:
+              axis: depth
+              define_layout: true
+              unit: ft
+              scale_ratio: 240
+              major_step: 10
+              secondary_grid:
+                display: true
+                line_count: 5
+              header:
+                display_unit: true
+                display_scale: true
+                display_annotations: false
+              number_format:
+                format: automatic
+                precision: 0
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: false
+                  reserve_space: false
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: temp_fill
+            title: ""
+            kind: normal
+            width_mm: 44
+            position: 3
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 4
+                  spacing_mode: count
+                secondary:
+                  scale: linear
+                  line_count: 5
+                  spacing_mode: count
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: vdl
+            title: ""
+            kind: array
+            width_mm: 58
+            position: 4
+            x_scale:
+              kind: linear
+              min: 200
+              max: 1200
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 2
+                  spacing_mode: count
+                secondary:
+                  visible: false
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+    tail:
+      enabled: false
+  bindings:
+    on_missing: skip
+    channels:
+      - section: main
+        channel: ECGR_STGC
+        track_id: combo
+        kind: curve
+        label: Gamma Ray (ECGR_STGC) QTGC-B
+        style:
+          color: "#17bf22"
+          line_width: 0.85
+        scale:
+          kind: linear
+          min: 0
+          max: 150
+      - section: main
+        channel: TT
+        track_id: combo
+        kind: curve
+        label: Transit Time for CBL (TT) QSLT-B
+        style:
+          color: "#1238ff"
+          line_width: 0.8
+        scale:
+          kind: linear
+          min: 200
+          max: 400
+          reverse: true
+      - section: main
+        channel: MTEM
+        track_id: temp_fill
+        kind: curve
+        label: Mud Temperature (MTEM)
+        style:
+          color: "#111111"
+          line_width: 0.8
+        scale:
+          kind: linear
+          min: 70
+          max: 420
+        fill:
+          kind: between_curves
+          other_channel: MTEM_FILT
+          color: "#d1d5db"
+          alpha: 0.35
+          crossover:
+            enabled: true
+            left_color: "#1f9d55"
+            right_color: "#d64545"
+            alpha: 0.4
+      - section: main
+        channel: MTEM_FILT
+        track_id: temp_fill
+        kind: curve
+        label: Mud Temp Filtered (MTEM_FILT)
+        style:
+          color: "#1d4ed8"
+          line_width: 0.75
+          line_style: "--"
+        scale:
+          kind: linear
+          min: 70
+          max: 420
+      - section: main
+        channel: VDL
+        track_id: vdl
+        kind: raster
+        label: VDL VariableDensity (VDL) QSLT-B
+        profile: vdl
+        normalization: auto
+        waveform_normalization: trace_maxabs
+        style:
+          colormap: gray_r
+        show_raster: true
+        raster_alpha: 1.0
+        colorbar:
+          enabled: true
+          position: header
+        sample_axis:
+          enabled: true
+          unit: us
+          min: 200
+          max: 1200
+          source_origin: 40
+          source_step: 10

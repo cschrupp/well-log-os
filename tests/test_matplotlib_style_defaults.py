@@ -4,6 +4,11 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import matplotlib
+
+matplotlib.use("Agg", force=True)
+
+import matplotlib.pyplot as plt
 import numpy as np
 
 from well_log_os import (
@@ -18,6 +23,7 @@ from well_log_os import (
     WellDataset,
     document_from_mapping,
 )
+from well_log_os.errors import TemplateValidationError
 from well_log_os.renderers.matplotlib import (
     DEFAULT_MPL_STYLE_PATH,
     MatplotlibRenderer,
@@ -439,6 +445,291 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
         self.assertFalse(wrapped_mask[3])
         self.assertAlmostEqual(float(wrapped[0]), 100.0, places=4)
         self.assertAlmostEqual(float(wrapped[4]), 20.0, places=4)
+
+    def test_between_curves_fill_adds_single_collection(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "between curves fill",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "porosity",
+                        "title": "Porosity",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "elements": [
+                            {
+                                "kind": "curve",
+                                "channel": "A",
+                                "scale": {"kind": "linear", "min": 0, "max": 100},
+                                "fill": {
+                                    "kind": "between_curves",
+                                    "other_channel": "B",
+                                    "color": "#22c55e",
+                                    "alpha": 0.3,
+                                },
+                            },
+                            {
+                                "kind": "curve",
+                                "channel": "B",
+                                "scale": {"kind": "linear", "min": 0, "max": 100},
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+        depth = np.array([1000.0, 1001.0, 1002.0, 1003.0], dtype=float)
+        dataset = WellDataset(name="fill")
+        dataset.add_channel(ScalarChannel("A", depth, "m", "pu", values=np.array([10, 20, 35, 50])))
+        dataset.add_channel(ScalarChannel("B", depth, "m", "pu", values=np.array([20, 25, 40, 65])))
+
+        renderer = MatplotlibRenderer()
+        fig, ax = plt.subplots()
+        try:
+            track = document.tracks[0]
+            element = track.elements[0]
+            renderer._draw_curve(
+                ax,
+                track,
+                element,
+                document,
+                dataset,
+                independent_curve_scales=True,
+            )
+            self.assertEqual(len(ax.collections), 1)
+        finally:
+            plt.close(fig)
+
+    def test_between_curves_crossover_fill_adds_two_collections(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "between curves crossover",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "porosity",
+                        "title": "Porosity",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "elements": [
+                            {
+                                "kind": "curve",
+                                "channel": "A",
+                                "scale": {"kind": "linear", "min": 0, "max": 100},
+                                "fill": {
+                                    "kind": "between_curves",
+                                    "other_channel": "B",
+                                    "color": "#999999",
+                                    "crossover": {
+                                        "enabled": True,
+                                        "left_color": "#22c55e",
+                                        "right_color": "#ef4444",
+                                    },
+                                },
+                            },
+                            {
+                                "kind": "curve",
+                                "channel": "B",
+                                "scale": {"kind": "linear", "min": 0, "max": 100},
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+        depth = np.array([1000.0, 1001.0, 1002.0, 1003.0], dtype=float)
+        dataset = WellDataset(name="crossover")
+        dataset.add_channel(ScalarChannel("A", depth, "m", "pu", values=np.array([10, 60, 70, 30])))
+        dataset.add_channel(ScalarChannel("B", depth, "m", "pu", values=np.array([30, 20, 50, 40])))
+
+        renderer = MatplotlibRenderer()
+        fig, ax = plt.subplots()
+        try:
+            track = document.tracks[0]
+            element = track.elements[0]
+            renderer._draw_curve(
+                ax,
+                track,
+                element,
+                document,
+                dataset,
+                independent_curve_scales=True,
+            )
+            self.assertEqual(len(ax.collections), 2)
+        finally:
+            plt.close(fig)
+
+    def test_between_curves_fill_rejects_mismatched_scales(self) -> None:
+        depth = np.array([1000.0, 1001.0, 1002.0], dtype=float)
+        dataset = WellDataset(name="mismatch")
+        dataset.add_channel(ScalarChannel("A", depth, "m", "pu", values=np.array([10, 20, 30])))
+        dataset.add_channel(ScalarChannel("B", depth, "m", "pu", values=np.array([0.1, 0.2, 0.3])))
+        document = document_from_mapping(
+            {
+                "name": "between curves mismatch",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "porosity",
+                        "title": "Porosity",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "elements": [
+                            {
+                                "kind": "curve",
+                                "channel": "A",
+                                "scale": {"kind": "linear", "min": 0, "max": 100},
+                                "fill": {
+                                    "kind": "between_curves",
+                                    "other_channel": "B",
+                                },
+                            },
+                            {
+                                "kind": "curve",
+                                "channel": "B",
+                                "scale": {"kind": "linear", "min": 0, "max": 1},
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+
+        renderer = MatplotlibRenderer()
+        fig, ax = plt.subplots()
+        try:
+            with self.assertRaises(TemplateValidationError):
+                renderer._draw_curve(
+                    ax,
+                    document.tracks[0],
+                    document.tracks[0].elements[0],
+                    document,
+                    dataset,
+                    independent_curve_scales=True,
+                )
+        finally:
+            plt.close(fig)
+
+    def test_between_curves_fill_selects_matching_scale_for_duplicate_target_channel(self) -> None:
+        depth = np.array([1000.0, 1001.0, 1002.0, 1003.0], dtype=float)
+        dataset = WellDataset(name="duplicate target")
+        dataset.add_channel(ScalarChannel("A", depth, "m", "mV", values=np.array([2, 4, 6, 8])))
+        dataset.add_channel(ScalarChannel("B", depth, "m", "mV", values=np.array([1, 3, 5, 7])))
+        document = document_from_mapping(
+            {
+                "name": "duplicate target scale",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "cbl",
+                        "title": "CBL",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "elements": [
+                            {
+                                "kind": "curve",
+                                "channel": "A",
+                                "scale": {"kind": "linear", "min": 0, "max": 100},
+                            },
+                            {
+                                "kind": "curve",
+                                "channel": "B",
+                                "scale": {"kind": "linear", "min": 0, "max": 100},
+                            },
+                            {
+                                "kind": "curve",
+                                "channel": "A",
+                                "scale": {"kind": "linear", "min": 0, "max": 10},
+                                "fill": {
+                                    "kind": "between_curves",
+                                    "other_channel": "B",
+                                    "color": "#22c55e",
+                                },
+                            },
+                            {
+                                "kind": "curve",
+                                "channel": "B",
+                                "scale": {"kind": "linear", "min": 0, "max": 10},
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+
+        renderer = MatplotlibRenderer()
+        fig, ax = plt.subplots()
+        try:
+            renderer._draw_curve(
+                ax,
+                document.tracks[0],
+                document.tracks[0].elements[2],
+                document,
+                dataset,
+                independent_curve_scales=True,
+            )
+            self.assertEqual(len(ax.collections), 1)
+        finally:
+            plt.close(fig)
+
+    def test_between_instances_fill_supports_same_channel_with_different_scales(self) -> None:
+        depth = np.array([1000.0, 1001.0, 1002.0, 1003.0], dtype=float)
+        dataset = WellDataset(name="same channel instances")
+        dataset.add_channel(ScalarChannel("CBL", depth, "m", "mV", values=np.array([2, 4, 6, 8])))
+        document = document_from_mapping(
+            {
+                "name": "between instances",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "cbl",
+                        "title": "CBL",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "elements": [
+                            {
+                                "kind": "curve",
+                                "id": "cbl_0_100",
+                                "channel": "CBL",
+                                "scale": {"kind": "linear", "min": 0, "max": 100},
+                                "fill": {
+                                    "kind": "between_instances",
+                                    "other_element_id": "cbl_0_10",
+                                    "color": "#d1d5db",
+                                },
+                            },
+                            {
+                                "kind": "curve",
+                                "id": "cbl_0_10",
+                                "channel": "CBL",
+                                "scale": {"kind": "linear", "min": 0, "max": 10},
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+
+        renderer = MatplotlibRenderer()
+        fig, ax = plt.subplots()
+        try:
+            renderer._draw_curve(
+                ax,
+                document.tracks[0],
+                document.tracks[0].elements[0],
+                document,
+                dataset,
+                independent_curve_scales=True,
+            )
+            self.assertEqual(len(ax.collections), 1)
+        finally:
+            plt.close(fig)
 
     def test_vdl_raster_profile_normalizes_trace_amplitude(self) -> None:
         document = document_from_mapping(

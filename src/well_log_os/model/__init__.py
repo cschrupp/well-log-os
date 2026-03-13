@@ -2,6 +2,9 @@ from .channels import ArrayChannel, BaseChannel, RasterChannel, ScalarChannel
 from .dataset import WellDataset
 from .document import (
     CurveElement,
+    CurveFillCrossoverSpec,
+    CurveFillKind,
+    CurveFillSpec,
     CurveHeaderDisplaySpec,
     CurveValueLabelsSpec,
     DepthAxisSpec,
@@ -40,6 +43,9 @@ __all__ = [
     "CurveHeaderDisplaySpec",
     "CurveValueLabelsSpec",
     "CurveElement",
+    "CurveFillCrossoverSpec",
+    "CurveFillKind",
+    "CurveFillSpec",
     "DepthAxisSpec",
     "FooterSpec",
     "GridDisplayMode",

@@ -249,6 +249,8 @@ def _validate_document_bindings(
         channel_cfg = _ensure_mapping(item, context=f"{context}.channels[{index}]")
         _ = str(channel_cfg["channel"])
         _ = str(channel_cfg["track_id"])
+        if "id" in channel_cfg and not str(channel_cfg["id"]).strip():
+            raise TemplateValidationError(f"{context}.channels[{index}].id must be non-empty.")
         if "section" in channel_cfg:
             section = str(channel_cfg["section"])
             if section not in available_sections:
@@ -344,6 +346,11 @@ def _validate_document_bindings(
                     raise TemplateValidationError(
                         f"{context}.channels[{index}].wrap.color must be non-empty."
                     )
+        if "fill" in channel_cfg:
+            _parse_binding_curve_fill(
+                channel_cfg["fill"],
+                context=f"{context}.channels[{index}].fill",
+            )
         if "colorbar" in channel_cfg:
             _parse_binding_raster_colorbar(
                 channel_cfg["colorbar"],
@@ -376,6 +383,61 @@ def _parse_binding_wrap(value: Any, *, context: str) -> tuple[bool, str | None]:
     if not color_text:
         raise TemplateValidationError(f"{context}.color must be non-empty.")
     return enabled, color_text
+
+
+def _parse_binding_curve_fill(value: Any, *, context: str) -> dict[str, Any]:
+    fill = _ensure_mapping(value, context=context)
+    kind = str(fill.get("kind", "")).strip().lower()
+    if kind not in {"between_curves", "between_instances"}:
+        raise TemplateValidationError(
+            f"{context}.kind must be between_curves or between_instances."
+        )
+
+    payload: dict[str, Any] = {"kind": kind}
+    if kind == "between_curves":
+        other_channel = str(fill.get("other_channel", "")).strip()
+        if not other_channel:
+            raise TemplateValidationError(f"{context}.other_channel must be non-empty.")
+        payload["other_channel"] = other_channel
+    else:
+        other_element_id = str(fill.get("other_element_id", "")).strip()
+        if not other_element_id:
+            raise TemplateValidationError(f"{context}.other_element_id must be non-empty.")
+        payload["other_element_id"] = other_element_id
+    if "color" in fill:
+        color = str(fill["color"]).strip()
+        if not color:
+            raise TemplateValidationError(f"{context}.color must be non-empty.")
+        payload["color"] = color
+    if "alpha" in fill:
+        alpha = float(fill["alpha"])
+        if alpha < 0 or alpha > 1:
+            raise TemplateValidationError(f"{context}.alpha must be between 0 and 1.")
+        payload["alpha"] = alpha
+    if "crossover" in fill:
+        crossover = _ensure_mapping(fill["crossover"], context=f"{context}.crossover")
+        crossover_payload: dict[str, Any] = {"enabled": bool(crossover.get("enabled", True))}
+        if "left_color" in crossover:
+            color = str(crossover["left_color"]).strip()
+            if not color:
+                raise TemplateValidationError(f"{context}.crossover.left_color must be non-empty.")
+            crossover_payload["left_color"] = color
+        if "right_color" in crossover:
+            color = str(crossover["right_color"]).strip()
+            if not color:
+                raise TemplateValidationError(
+                    f"{context}.crossover.right_color must be non-empty."
+                )
+            crossover_payload["right_color"] = color
+        if "alpha" in crossover:
+            alpha = float(crossover["alpha"])
+            if alpha < 0 or alpha > 1:
+                raise TemplateValidationError(
+                    f"{context}.crossover.alpha must be between 0 and 1."
+                )
+            crossover_payload["alpha"] = alpha
+        payload["crossover"] = crossover_payload
+    return payload
 
 
 def _parse_binding_raster_colorbar(
@@ -1052,6 +1114,12 @@ def _build_tracks_from_layout_bindings(
                     )
                 ),
             }
+            if "id" in binding:
+                element["id"] = str(binding["id"]).strip()
+            if "fill" in binding:
+                element["fill"] = deepcopy(
+                    _parse_binding_curve_fill(binding["fill"], context=f"{binding_context}.fill")
+                )
             track["elements"].append(element)
             continue
 

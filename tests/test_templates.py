@@ -5,6 +5,7 @@ import unittest
 from well_log_os.errors import TemplateValidationError
 from well_log_os.model import (
     CurveElement,
+    CurveFillKind,
     GridDisplayMode,
     GridScaleKind,
     GridSpacingMode,
@@ -93,6 +94,98 @@ class TemplateTests(unittest.TestCase):
         self.assertIsInstance(element, CurveElement)
         self.assertTrue(element.wrap)
         self.assertEqual(element.wrap_color, "#ff5500")
+
+    def test_curve_element_can_parse_between_curves_fill(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "curve fill",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "porosity",
+                        "title": "Porosity",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "elements": [
+                            {
+                                "kind": "curve",
+                                "channel": "NPHI",
+                                "scale": {"kind": "linear", "min": 0, "max": 0.45},
+                                "fill": {
+                                    "kind": "between_curves",
+                                    "other_channel": "DPHI",
+                                    "color": "#22c55e",
+                                    "alpha": 0.3,
+                                    "crossover": {
+                                        "enabled": True,
+                                        "left_color": "#22c55e",
+                                        "right_color": "#ef4444",
+                                    },
+                                },
+                            },
+                            {
+                                "kind": "curve",
+                                "channel": "DPHI",
+                                "scale": {"kind": "linear", "min": 0, "max": 0.45},
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+        element = document.tracks[0].elements[0]
+        self.assertIsInstance(element, CurveElement)
+        assert element.fill is not None
+        self.assertEqual(element.fill.kind, CurveFillKind.BETWEEN_CURVES)
+        self.assertEqual(element.fill.other_channel, "DPHI")
+        self.assertEqual(element.fill.color, "#22c55e")
+        self.assertAlmostEqual(element.fill.alpha or 0.0, 0.3)
+        self.assertTrue(element.fill.crossover.enabled)
+        self.assertEqual(element.fill.crossover.left_color, "#22c55e")
+        self.assertEqual(element.fill.crossover.right_color, "#ef4444")
+
+    def test_curve_element_can_parse_between_instances_fill(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "curve instance fill",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "cbl",
+                        "title": "CBL",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "elements": [
+                            {
+                                "kind": "curve",
+                                "id": "cbl_0_100",
+                                "channel": "CBL",
+                                "scale": {"kind": "linear", "min": 0, "max": 100},
+                                "fill": {
+                                    "kind": "between_instances",
+                                    "other_element_id": "cbl_0_10",
+                                    "color": "#d1d5db",
+                                },
+                            },
+                            {
+                                "kind": "curve",
+                                "id": "cbl_0_10",
+                                "channel": "CBL",
+                                "scale": {"kind": "linear", "min": 0, "max": 10},
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+        element = document.tracks[0].elements[0]
+        self.assertIsInstance(element, CurveElement)
+        self.assertEqual(element.id, "cbl_0_100")
+        assert element.fill is not None
+        self.assertEqual(element.fill.kind, CurveFillKind.BETWEEN_INSTANCES)
+        self.assertEqual(element.fill.other_element_id, "cbl_0_10")
 
     def test_reference_track_can_define_layout_axis(self) -> None:
         document = document_from_mapping(

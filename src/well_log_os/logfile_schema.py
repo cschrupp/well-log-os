@@ -241,10 +241,12 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "track_id": {"type": "string", "minLength": 1},
                 "required": {"type": "boolean"},
                 "kind": {"type": "string", "enum": ["curve", "raster"]},
+                "id": {"type": "string", "minLength": 1},
                 "label": {"type": "string"},
                 "style": {"$ref": "#/$defs/stylePatch"},
                 "scale": {"$ref": "#/$defs/trackScale"},
                 "wrap": {"$ref": "#/$defs/curveWrap"},
+                "fill": {"$ref": "#/$defs/curveFill"},
                 "render_mode": {"type": "string", "enum": ["line", "value_labels"]},
                 "value_labels": {"$ref": "#/$defs/curveValueLabels"},
                 "header_display": {"$ref": "#/$defs/curveHeaderDisplay"},
@@ -649,6 +651,51 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                     },
                 },
             ]
+        },
+        "curveFillCrossover": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "enabled": {"type": "boolean"},
+                "left_color": {"type": "string", "minLength": 1},
+                "right_color": {"type": "string", "minLength": 1},
+                "alpha": {"type": "number", "minimum": 0, "maximum": 1},
+            },
+        },
+        "curveFill": {
+            "type": "object",
+            "required": ["kind"],
+            "additionalProperties": False,
+            "properties": {
+                "kind": {"type": "string", "enum": ["between_curves", "between_instances"]},
+                "other_channel": {"type": "string", "minLength": 1},
+                "other_element_id": {"type": "string", "minLength": 1},
+                "color": {"type": "string", "minLength": 1},
+                "alpha": {"type": "number", "minimum": 0, "maximum": 1},
+                "crossover": {"$ref": "#/$defs/curveFillCrossover"},
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "required": ["kind"],
+                        "properties": {"kind": {"const": "between_curves"}},
+                    },
+                    "then": {
+                        "required": ["other_channel"],
+                        "not": {"required": ["other_element_id"]},
+                    },
+                },
+                {
+                    "if": {
+                        "required": ["kind"],
+                        "properties": {"kind": {"const": "between_instances"}},
+                    },
+                    "then": {
+                        "required": ["other_element_id"],
+                        "not": {"required": ["other_channel"]},
+                    },
+                },
+            ],
         },
         "rasterColorbar": {
             "anyOf": [
