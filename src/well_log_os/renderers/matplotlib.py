@@ -240,11 +240,14 @@ class MatplotlibRenderer(Renderer):
     def _document_curve_row_capacity(self, document: LogDocument) -> int:
         return max((self._curve_count(track) for track in document.tracks), default=0)
 
+    def _header_property_group_capacity(self, document: LogDocument) -> int:
+        return max(1, self._document_curve_row_capacity(document))
+
     def _curve_header_row_count(self, document: LogDocument, track) -> int:
         count = self._curve_count(track)
         if count <= 0:
             return 0
-        return max(count, self._document_curve_row_capacity(document))
+        return max(count, self._header_property_group_capacity(document))
 
     def _effective_header_line_units(self, track, header_item) -> int:
         if not header_item.enabled or not header_item.reserve_space:
@@ -673,8 +676,16 @@ class MatplotlibRenderer(Renderer):
         self._style_track_frame(ax)
         slots = self._track_header_slots(track)
         paired_slot = self._curve_header_pair_slot(track, slots)
+        raster_triplet_slot = None
+        if paired_slot is None:
+            raster_triplet_slot = self._raster_header_triplet_slot(track, slots, dataset)
         for index, (item, slot_top, slot_bottom) in enumerate(slots):
             if paired_slot is not None and index == paired_slot[1]:
+                continue
+            if (
+                raster_triplet_slot is not None
+                and raster_triplet_slot[0] < index <= raster_triplet_slot[1]
+            ):
                 continue
             if index > 0:
                 ax.plot(
@@ -694,6 +705,16 @@ class MatplotlibRenderer(Renderer):
                     dataset,
                     paired_slot[2],
                     paired_slot[3],
+                )
+                continue
+            if raster_triplet_slot is not None and index == raster_triplet_slot[0]:
+                self._draw_track_header_raster_triplet(
+                    ax,
+                    track,
+                    document,
+                    dataset,
+                    raster_triplet_slot[2],
+                    raster_triplet_slot[3],
                 )
                 continue
             if item.kind == TrackHeaderObjectKind.TITLE:
@@ -726,6 +747,42 @@ class MatplotlibRenderer(Renderer):
         top = slots[first][1]
         bottom = slots[second][2]
         return first, second, top, bottom
+
+    def _raster_header_triplet_slot(
+        self,
+        track,
+        slots,
+        dataset: WellDataset,
+    ) -> tuple[int, int, float, float] | None:
+        if self._curve_count(track) > 0:
+            return None
+        if self._header_raster_colorbar_target(track, dataset) is None:
+            return None
+
+        scale_index = None
+        legend_index = None
+        division_index = None
+        for index, (item, _, _) in enumerate(slots):
+            if not item.enabled or not item.reserve_space:
+                continue
+            if item.kind == TrackHeaderObjectKind.SCALE:
+                scale_index = index
+            elif item.kind == TrackHeaderObjectKind.LEGEND:
+                legend_index = index
+            elif item.kind == TrackHeaderObjectKind.DIVISIONS:
+                division_index = index
+
+        if scale_index is None or legend_index is None:
+            return None
+
+        indices = [scale_index, legend_index]
+        if division_index is not None:
+            indices.append(division_index)
+        first = min(indices)
+        last = max(indices)
+        top = slots[first][1]
+        bottom = slots[last][2]
+        return first, last, top, bottom
 
     def _track_header_slots(self, track) -> tuple[tuple[object, float, float], ...]:
         reserved = track.header.reserved_objects()
@@ -1485,9 +1542,11 @@ class MatplotlibRenderer(Renderer):
                 limits = (float(np.nanmin(finite)), float(np.nanmax(finite)))
             else:
                 limits = (0.0, 1.0)
-        left_value = f"{limits[0]:g}"
-        right_value = f"{limits[1]:g}"
-        center_text = element.colorbar_label or channel.value_unit or "Amplitude"
+        left_value, center_text, right_value = self._raster_header_colorbar_text_triplet(
+            element,
+            channel,
+            limits=limits,
+        )
 
         gradient = np.linspace(0.0, 1.0, 128, dtype=float)[None, :]
         ax.imshow(
@@ -1542,6 +1601,18 @@ class MatplotlibRenderer(Renderer):
             color=text_color,
             clip_on=True,
         )
+
+    def _raster_header_colorbar_text_triplet(
+        self,
+        element: RasterElement,
+        channel: RasterChannel,
+        *,
+        limits: tuple[float, float],
+    ) -> tuple[str, str, str]:
+        center_text = element.colorbar_label or channel.value_unit or "Amplitude"
+        if element.profile == RasterProfileKind.VDL:
+            return "Min", center_text, "Max"
+        return f"{limits[0]:g}", center_text, f"{limits[1]:g}"
 
     def _draw_track_header_divisions(
         self,
@@ -1656,6 +1727,50 @@ class MatplotlibRenderer(Renderer):
                 color=tick_color,
                 clip_on=True,
             )
+
+    def _draw_track_header_raster_triplet(
+        self,
+        ax,
+        track,
+        document,
+        dataset: WellDataset,
+        slot_top: float,
+        slot_bottom: float,
+    ) -> None:
+        target = self._header_raster_colorbar_target(track, dataset)
+        if target is None:
+            self._draw_track_header_legend(ax, track, document, dataset, slot_top, slot_bottom)
+            return
+
+        element, channel = target
+        property_group_capacity = self._header_property_group_capacity(document)
+        rows = self._curve_row_bounds(slot_top, slot_bottom, property_group_capacity * 3)
+        if len(rows) < 3:
+            return
+        self._draw_track_header_raster_colorbar(
+            ax,
+            track,
+            element,
+            channel,
+            rows[0][0],
+            rows[0][1],
+        )
+        self._draw_track_header_legend(
+            ax,
+            track,
+            document,
+            dataset,
+            rows[1][0],
+            rows[1][1],
+        )
+        self._draw_track_header_scale(
+            ax,
+            track,
+            document,
+            dataset,
+            rows[2][0],
+            rows[2][1],
+        )
 
     def _draw_track_header_legend(
         self,

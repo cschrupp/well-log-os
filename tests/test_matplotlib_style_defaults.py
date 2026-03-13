@@ -194,8 +194,174 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
         )
         renderer = MatplotlibRenderer()
         self.assertEqual(renderer._document_curve_row_capacity(document), 4)
+        self.assertEqual(renderer._header_property_group_capacity(document), 4)
         self.assertEqual(renderer._curve_header_row_count(document, document.tracks[0]), 4)
         self.assertEqual(renderer._curve_header_row_count(document, document.tracks[1]), 4)
+
+    def test_raster_header_triplet_uses_combined_scale_legend_span(self) -> None:
+        depth = np.array([1000.0, 1001.0, 1002.0])
+        samples = np.array([200.0, 700.0, 1200.0])
+        values = np.array(
+            [
+                [0.1, 0.3, 0.2],
+                [0.0, -0.2, -0.1],
+                [0.2, 0.1, -0.2],
+            ],
+            dtype=float,
+        )
+        dataset = WellDataset(name="sample")
+        dataset.add_channel(
+            RasterChannel(
+                "VDL",
+                depth=depth,
+                depth_unit="m",
+                values=values,
+                sample_axis=samples,
+                sample_unit="us",
+            )
+        )
+        document = document_from_mapping(
+            {
+                "name": "raster header triplet",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "vdl",
+                        "title": "VDL",
+                        "kind": "array",
+                        "width_mm": 40,
+                        "track_header": {
+                            "objects": [
+                                {
+                                    "kind": "title",
+                                    "enabled": False,
+                                    "reserve_space": False,
+                                },
+                                {"kind": "scale", "enabled": True, "line_units": 1},
+                                {"kind": "legend", "enabled": True, "line_units": 2},
+                            ]
+                        },
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "profile": "vdl",
+                                "colorbar": {"enabled": True, "position": "header"},
+                                "sample_axis": {"min": 200, "max": 1200, "unit": "us"},
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        renderer = MatplotlibRenderer()
+        track = document.tracks[0]
+        slots = renderer._track_header_slots(track)
+        triplet = renderer._raster_header_triplet_slot(track, slots, dataset)
+        self.assertIsNotNone(triplet)
+        assert triplet is not None
+        self.assertEqual(triplet[0], 0)
+        self.assertEqual(triplet[1], 1)
+        self.assertGreater(triplet[2], triplet[3])
+
+    def test_raster_header_uses_curve_property_group_capacity(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "uniform raster header groups",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "combo",
+                        "title": "Combo",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "elements": [
+                            {"kind": "curve", "channel": "A"},
+                            {"kind": "curve", "channel": "B"},
+                            {"kind": "curve", "channel": "C"},
+                            {"kind": "curve", "channel": "D"},
+                        ],
+                    },
+                    {
+                        "id": "vdl",
+                        "title": "VDL",
+                        "kind": "array",
+                        "width_mm": 40,
+                        "track_header": {
+                            "objects": [
+                                {
+                                    "kind": "title",
+                                    "enabled": False,
+                                    "reserve_space": False,
+                                },
+                                {"kind": "scale", "enabled": True, "line_units": 1},
+                                {"kind": "legend", "enabled": True, "line_units": 2},
+                            ]
+                        },
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "profile": "vdl",
+                                "colorbar": {"enabled": True, "position": "header"},
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+        renderer = MatplotlibRenderer()
+        self.assertEqual(renderer._header_property_group_capacity(document), 4)
+        rows = renderer._curve_row_bounds(
+            0.9,
+            0.3,
+            renderer._header_property_group_capacity(document) * 3,
+        )
+        self.assertEqual(len(rows), 12)
+
+    def test_vdl_header_colorbar_uses_min_amplitude_max_labels(self) -> None:
+        renderer = MatplotlibRenderer()
+        element = document_from_mapping(
+            {
+                "name": "vdl header labels",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "vdl",
+                        "title": "VDL",
+                        "kind": "array",
+                        "width_mm": 40,
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "profile": "vdl",
+                                "colorbar": {"enabled": True, "label": "Amplitude"},
+                            }
+                        ],
+                    }
+                ],
+            }
+        ).tracks[0].elements[0]
+        channel = RasterChannel(
+            "VDL",
+            depth=np.array([0.0, 1.0]),
+            depth_unit="m",
+            values=np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float),
+            sample_axis=np.array([200.0, 1200.0]),
+            sample_unit="us",
+        )
+        left, center, right = renderer._raster_header_colorbar_text_triplet(
+            element,
+            channel,
+            limits=(-1.0, 1.0),
+        )
+        self.assertEqual(left, "Min")
+        self.assertEqual(center, "Amplitude")
+        self.assertEqual(right, "Max")
 
     def test_curve_header_display_controls_scale_text_and_color(self) -> None:
         depth = np.array([1000.0, 1001.0, 1002.0])
