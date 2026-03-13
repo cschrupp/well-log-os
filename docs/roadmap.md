@@ -1,6 +1,6 @@
 # well_log_os Roadmap
 
-Last updated: 2026-03-10
+Last updated: 2026-03-12
 
 ## Scope Summary
 
@@ -28,7 +28,10 @@ Decision history is tracked in `docs/decision-log.md`.
   - continuous single-page PDF
   - depth grid + markers/zones
   - structured track header object slots
-  - array-lane raster MVP controls (`colorbar`, `sample_axis` labels/ticks)
+  - array-lane raster controls (`colorbar`, `sample_axis`, waveform overlay)
+  - waveform-only array rendering profile
+  - VDL density rendering with grayscale amplitude mapping
+  - DLIS-derived raster sample-axis metadata with savefile overrides
 - Plotly renderer provides interactive visualization baseline.
 - Synthetic example exists for fast iteration (`examples/synthetic_demo.py` + `examples/triple_combo.yaml`).
 - Log-file schema validation is implemented (JSON Schema + CLI `validate`).
@@ -58,13 +61,13 @@ Needed next to complete the intended workflow:
 
 Compared against `workspace/renders/CBL_log_example.Pdf`, the current renderer is missing:
 
-- VDL image/raster lane support from DLIS normalization.
 - Cover/disclaimer/contents pages and report-style front matter.
 - Parameter-table sections (channel processing, depth zone, tool control).
 - Advanced per-depth callouts/labels/arrows and event glyphs.
 - Composite lane logic with custom legend/table blocks.
 - Multi-page report composition mode (in addition to continuous strip mode).
 - Richer visual theming and table/border styles for commercial-style output.
+- Final-user calibration workflow for vendor-specific micro-time origin/width differences in VDLs.
 
 ## Curve Properties Matrix (Techlog Comparison, 2026-03-09)
 
@@ -112,6 +115,7 @@ Longer-term / UI-centric:
 - Add dedicated data-driven tick primitives for reference tracks (major/minor + event ticks).
 - Add configurable reference-value placement/alignment policies inside track (left/center/right, collision handling).
 - Improve raster controls (color limits, interpolation presets, palettes).
+- Add explicit micro-time calibration helpers/presets for VDL sample-axis tuning.
 - Add configurable track border styles and divider systems.
 
 ### Phase C: Interactive Viewer Maturity
@@ -174,7 +178,6 @@ Longer-term / UI-centric:
   - depth-reference with curve overlay
   - time-reference sample
   - mixed reference + array + normal layout
-- Implement DLIS normalization for array/raster channels (VDL-first target).
 - Add image-track template examples for CBL/VDL with curve overlays.
 - Introduce report-section primitives (cover, disclaimer, contents, parameter tables).
 - Add annotation primitives for callouts/arrows and depth-linked labels.
@@ -184,6 +187,7 @@ Longer-term / UI-centric:
 - Add visual regression checks for header slot layout and non-overlap.
 - Tune default header `line_units` and font scaling against real CBL examples.
 - Add one more end-to-end sample with multiple image tracks + overlays.
+- Add savefile examples for VDL micro-time tuning against vendor outputs.
 
 ## Working Principles
 

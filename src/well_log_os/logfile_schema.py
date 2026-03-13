@@ -675,10 +675,21 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                         "label": {"type": "string", "minLength": 1},
                         "unit": {"type": "string", "minLength": 1},
                         "ticks": {"type": "integer", "minimum": 2},
+                        "source_origin": {"type": "number"},
+                        "source_step": {"type": "number"},
                         "min": {"type": "number"},
                         "max": {"type": "number"},
                     },
                     "allOf": [
+                        {
+                            "if": {
+                                "anyOf": [
+                                    {"required": ["source_origin"]},
+                                    {"required": ["source_step"]},
+                                ]
+                            },
+                            "then": {"required": ["source_origin", "source_step"]},
+                        },
                         {
                             "if": {
                                 "anyOf": [

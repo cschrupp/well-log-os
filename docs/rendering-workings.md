@@ -255,21 +255,48 @@ Wrapping applies to curves in `reference`, `normal`, and `array` tracks.
 It folds out-of-range curve values into the configured scale interval and can
 render wrapped sections in a separate color (`wrap.color`).
 
-## 11) Array Display Options (MVP)
+## 11) Array Display Options
 
 Raster bindings in array tracks support:
 
-- `profile`: `generic` or `vdl`
+- `profile`: `generic`, `vdl`, or `waveform`
 - `normalization`: `auto`, `none`, `trace_maxabs`, `global_maxabs`
 - `colorbar`: `true/false` or object `{ enabled, label, position }`
-- `sample_axis`: `true/false` or object `{ enabled, label, unit, ticks, min, max }`
+- `sample_axis`:
+  `{ enabled, label, unit, ticks, min, max, source_origin, source_step }`
 - `waveform`: `true/false` or object
-  `{ enabled, stride, amplitude_scale, color, line_width, max_traces }`
+  `{ enabled, stride, amplitude_scale, color, line_width, max_traces, fill,
+  positive_fill_color, negative_fill_color, invert_fill_polarity }`
 - existing raster options:
   - `style.colormap`
   - `interpolation`
   - `color_limits`
   - `clip_percentiles`
+
+Profile semantics:
+
+- `generic`: plain raster display with optional sample-axis labels/ticks.
+- `vdl`: Variable Density Log density display using zero-centered clipping and grayscale mapping.
+  With `gray_r`, negative amplitudes render white and positive amplitudes render black.
+- `waveform`: waveform-only array display. Raster background is disabled by default and waveform
+  overlay is enabled by default.
+
+Sample-axis resolution order:
+
+1. `binding.sample_axis.source_origin/source_step` from the logfile, when provided.
+2. `RasterChannel.sample_axis` loaded from the source file.
+3. DLIS tool/channel metadata-derived axis, when available.
+
+For current DLIS VDL/WF1 support, the loader can derive micro-time axes from channel axes or tool
+metadata such as digitizer sample interval. The renderer then clips the actual raster/waveform
+columns to `sample_axis.min/max` before plotting. This is important: the selected time window is a
+true crop, not a relabel of the full waveform width.
+
+This also means end-user tuning remains valid and necessary for parity work. If a vendor-generated
+log starts slightly earlier or later than our auto-derived axis, users should adjust:
+
+- `sample_axis.source_origin`
+- `sample_axis.source_step`
 
 Example:
 
@@ -292,6 +319,8 @@ document:
         sample_axis:
           enabled: false
           unit: us
+          source_origin: 40
+          source_step: 10
           min: 200
           max: 1200
           ticks: 7
@@ -301,10 +330,17 @@ document:
           amplitude_scale: 0.35
           color: "#5b3f8c"
           line_width: 0.22
+          fill: true
+          positive_fill_color: "#000000"
+          negative_fill_color: "#ffffff"
+          invert_fill_polarity: true
           max_traces: 700
 ```
 
 Reference example files:
 
 - [examples/cbl_vdl_array_mvp.log.yaml](../examples/cbl_vdl_array_mvp.log.yaml)
+- [examples/cbl_vdl_array_overlay.log.yaml](../examples/cbl_vdl_array_overlay.log.yaml)
+- [examples/cbl_comparison_feet.log.yaml](../examples/cbl_comparison_feet.log.yaml)
+- [examples/cbl_comparison_feet_full.log.yaml](../examples/cbl_comparison_feet_full.log.yaml)
 - [examples/cbl_vdl_array_mvp_demo.py](../examples/cbl_vdl_array_mvp_demo.py)

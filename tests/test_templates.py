@@ -177,6 +177,8 @@ class TemplateTests(unittest.TestCase):
                                     "label": "Azimuth (deg)",
                                     "unit": "deg",
                                     "ticks": 7,
+                                    "source_origin": 40,
+                                    "source_step": 10,
                                     "min": 200,
                                     "max": 1200,
                                 },
@@ -216,6 +218,8 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(image_track.elements[0].sample_axis_label, "Azimuth (deg)")
         self.assertEqual(image_track.elements[0].sample_axis_unit, "deg")
         self.assertEqual(image_track.elements[0].sample_axis_tick_count, 7)
+        self.assertEqual(image_track.elements[0].sample_axis_source_origin, 40.0)
+        self.assertEqual(image_track.elements[0].sample_axis_source_step, 10.0)
         self.assertEqual(image_track.elements[0].sample_axis_min, 200.0)
         self.assertEqual(image_track.elements[0].sample_axis_max, 1200.0)
         self.assertTrue(image_track.elements[0].waveform.enabled)

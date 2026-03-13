@@ -369,6 +369,60 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
             ),
         )
 
+    def test_raster_window_crops_to_selected_sample_axis_range(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "vdl crop",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "vdl",
+                        "title": "VDL",
+                        "kind": "array",
+                        "width_mm": 40,
+                        "x_scale": {"kind": "linear", "min": 200, "max": 1200},
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "profile": "vdl",
+                                "sample_axis": {
+                                    "unit": "us",
+                                    "source_origin": 40,
+                                    "source_step": 10,
+                                    "min": 200,
+                                    "max": 1200,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        renderer = MatplotlibRenderer()
+        channel = RasterChannel(
+            "VDL",
+            np.array([1000.0, 1001.0], dtype=float),
+            "m",
+            "amp",
+            values=np.vstack([np.arange(256, dtype=float), np.arange(256, dtype=float)]),
+            sample_axis=np.arange(256, dtype=float),
+        )
+        element = document.tracks[0].elements[0]
+        sample_axis = renderer._resolved_raster_sample_axis(channel, element)
+        clipped_axis, clipped_values = renderer._clip_raster_columns_to_window(
+            sample_axis,
+            channel.values,
+            axis_min=200.0,
+            axis_max=1200.0,
+        )
+        self.assertEqual(clipped_axis[0], 200.0)
+        self.assertEqual(clipped_axis[-1], 1200.0)
+        self.assertEqual(clipped_axis.shape[0], 101)
+        self.assertEqual(clipped_values.shape, (2, 101))
+        np.testing.assert_array_equal(clipped_values[0], np.arange(16, 117, dtype=float))
+
     def test_vdl_profile_uses_split_auto_normalization_modes(self) -> None:
         document = document_from_mapping(
             {

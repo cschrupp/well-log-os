@@ -18,6 +18,8 @@ class _FakeChannel:
         units: str = "",
         dimension: list[int] | None = None,
         long_name: str = "",
+        source: object = "tool",
+        axis: list[object] | None = None,
     ) -> None:
         self.name = name
         self.units = units
@@ -25,7 +27,8 @@ class _FakeChannel:
         self.long_name = long_name
         self.reprc = 2
         self.properties = []
-        self.source = "tool"
+        self.source = source
+        self.axis = axis or []
 
 
 class _FakeFrame:
@@ -49,9 +52,49 @@ class _FakeOrigin:
 
 
 class _FakeLogical:
-    def __init__(self, frames: list[_FakeFrame]) -> None:
+    def __init__(self, frames: list[_FakeFrame], *, axes: list[object] | None = None) -> None:
         self.frames = frames
         self.origins = [_FakeOrigin()]
+        self.axes = axes or []
+
+
+class _FakeParameter:
+    def __init__(self, name: str, values: list[object]) -> None:
+        self.name = name
+        self.values = values
+
+
+class _FakeTool:
+    def __init__(
+        self,
+        name: str,
+        *,
+        origin: int = 62,
+        parameters: list[object] | None = None,
+    ) -> None:
+        self.name = name
+        self.origin = origin
+        self.parameters = parameters or []
+
+    def __str__(self) -> str:
+        return f"Tool({self.name})"
+
+
+class _FakeAxis:
+    def __init__(
+        self,
+        axis_id: str,
+        *,
+        coordinates: list[float] | None = None,
+        spacing: float | None = None,
+        units: str | None = None,
+        origin: int | None = None,
+    ) -> None:
+        self.axis_id = axis_id
+        self.coordinates = coordinates or []
+        self.spacing = spacing
+        self.units = units
+        self.origin = origin
 
 
 def _frame_curves(depth: np.ndarray, cbl: np.ndarray, vdl: np.ndarray | None = None) -> np.ndarray:
@@ -115,6 +158,58 @@ class DLISIOTests(unittest.TestCase):
         self.assertEqual(vdl_channel.sample_axis.shape[0], 4)
         self.assertEqual(dataset.provenance["format"], "DLIS")
         self.assertEqual(dataset.provenance["frames_processed"], 2)
+
+    def test_load_dlis_derives_micro_time_sample_axis_for_raster_channels(self) -> None:
+        depth = np.asarray([1200.0, 1140.0, 1080.0], dtype=float)
+        cbl = np.asarray([11.0, 21.0, 31.0], dtype=float)
+        vdl = np.linspace(-1.0, 1.0, depth.size * 4).reshape(depth.size, 4)
+
+        tool = _FakeTool(
+            "QSLT-BB",
+            origin=62,
+            parameters=[
+                _FakeParameter("DWCO", [4]),
+                _FakeParameter("DSIN", [10]),
+                _FakeParameter("TSTE", [50]),
+            ],
+        )
+        micro_time_axis = _FakeAxis(
+            "MICRO_TIME",
+            coordinates=[40.0],
+            spacing=10.0,
+            origin=62,
+        )
+
+        index_ch = _FakeChannel("TDEP", units="0.1 in", dimension=[1], long_name="Depth")
+        cbl_ch = _FakeChannel("CBL", units="mV", dimension=[1], long_name="CBL")
+        vdl_ch = _FakeChannel(
+            "VDL",
+            units="amplitude",
+            dimension=[4],
+            long_name="VDL",
+            source=tool,
+        )
+
+        frame = _FakeFrame(
+            "B",
+            [index_ch, cbl_ch, vdl_ch],
+            _frame_curves(depth, cbl, vdl=vdl),
+        )
+        logical = _FakeLogical([frame], axes=[micro_time_axis])
+
+        fake_dlis_module = types.SimpleNamespace(load=lambda _: [logical])
+        fake_pkg = types.SimpleNamespace(dlis=fake_dlis_module)
+
+        with patch.dict("sys.modules", {"dlisio": fake_pkg}):
+            dataset = load_dlis("fake.dlis")
+
+        vdl_channel = dataset.get_channel("VDL")
+        self.assertIsInstance(vdl_channel, RasterChannel)
+        np.testing.assert_allclose(vdl_channel.sample_axis, np.array([40.0, 50.0, 60.0, 70.0]))
+        self.assertEqual(vdl_channel.sample_unit, "us")
+        self.assertEqual(vdl_channel.sample_label, "time")
+        self.assertEqual(vdl_channel.metadata["sample_axis_source"], "tool_axis")
+        self.assertEqual(vdl_channel.metadata["DSIN"], 10)
 
 
 if __name__ == "__main__":

@@ -967,6 +967,7 @@ class MatplotlibRenderer(Renderer):
         element: RasterElement,
         channel: RasterChannel,
     ) -> tuple[float, float, str | None]:
+        sample_axis = self._resolved_raster_sample_axis(channel, element)
         if element.sample_axis_min is not None and element.sample_axis_max is not None:
             axis_min = float(element.sample_axis_min)
             axis_max = float(element.sample_axis_max)
@@ -974,13 +975,62 @@ class MatplotlibRenderer(Renderer):
             axis_min = float(track.x_scale.minimum)
             axis_max = float(track.x_scale.maximum)
         else:
-            axis_min = float(channel.sample_axis[0])
-            axis_max = float(channel.sample_axis[-1])
+            axis_min = float(sample_axis[0])
+            axis_max = float(sample_axis[-1])
         if np.isclose(axis_min, axis_max):
-            axis_min = float(channel.sample_axis[0])
-            axis_max = float(channel.sample_axis[-1])
+            axis_min = float(sample_axis[0])
+            axis_max = float(sample_axis[-1])
         unit_text = element.sample_axis_unit or channel.sample_unit or None
         return axis_min, axis_max, unit_text
+
+    def _resolved_raster_sample_axis(
+        self,
+        channel: RasterChannel,
+        element: RasterElement,
+    ) -> np.ndarray:
+        sample_count = channel.values.shape[1]
+        if (
+            element.sample_axis_source_origin is not None
+            and element.sample_axis_source_step is not None
+        ):
+            return (
+                float(element.sample_axis_source_origin)
+                + float(element.sample_axis_source_step) * np.arange(sample_count, dtype=float)
+            )
+        if channel.sample_axis.shape[0] == sample_count:
+            return np.asarray(channel.sample_axis, dtype=float)
+        return np.arange(sample_count, dtype=float)
+
+    def _clip_raster_columns_to_window(
+        self,
+        sample_axis: np.ndarray,
+        values: np.ndarray,
+        *,
+        axis_min: float,
+        axis_max: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        lower = min(axis_min, axis_max)
+        upper = max(axis_min, axis_max)
+        ascending = sample_axis[0] <= sample_axis[-1]
+        working_axis = sample_axis if ascending else sample_axis[::-1]
+        working_values = values if ascending else values[:, ::-1]
+
+        left = int(np.searchsorted(working_axis, lower, side="left"))
+        right = int(np.searchsorted(working_axis, upper, side="right"))
+
+        if right - left < 2:
+            left = max(0, min(left, working_axis.size - 2))
+            right = min(working_axis.size, max(right, left + 2))
+        if left == 0 and right == working_axis.size and (
+            lower > float(working_axis[-1]) or upper < float(working_axis[0])
+        ):
+            return sample_axis, values
+
+        clipped_axis = working_axis[left:right]
+        clipped_values = working_values[:, left:right]
+        if ascending:
+            return clipped_axis, clipped_values
+        return clipped_axis[::-1], clipped_values[:, ::-1]
 
     def _raster_scale_text_triplet(
         self,
@@ -1409,6 +1459,14 @@ class MatplotlibRenderer(Renderer):
             channel.values,
             element,
             target="raster",
+        )
+        sample_axis = self._resolved_raster_sample_axis(channel, element)
+        axis_min, axis_max, _ = self._raster_axis_limits(track, element, channel)
+        _, normalized_values = self._clip_raster_columns_to_window(
+            sample_axis,
+            normalized_values,
+            axis_min=axis_min,
+            axis_max=axis_max,
         )
         limits = self._resolve_raster_color_limits(normalized_values, element)
         if limits is None:
@@ -2588,6 +2646,7 @@ class MatplotlibRenderer(Renderer):
         if not isinstance(channel, RasterChannel):
             raise TypeError(f"Raster element {element.channel} requires a raster channel.")
         axis_min, axis_max, _ = self._raster_axis_limits(track, element, channel)
+        sample_axis = self._resolved_raster_sample_axis(channel, element)
         depth_source = channel.depth_in(document.depth_axis.unit, self.registry)
         raster_depth, raster_values = self._prepare_raster_display_data(
             depth_source,
@@ -2601,10 +2660,21 @@ class MatplotlibRenderer(Renderer):
             element,
             target="waveform",
         )
-        x_axis = np.linspace(axis_min, axis_max, waveform_values.shape[1], dtype=float)
+        raster_axis, raster_values = self._clip_raster_columns_to_window(
+            sample_axis,
+            raster_values,
+            axis_min=axis_min,
+            axis_max=axis_max,
+        )
+        waveform_axis, waveform_values = self._clip_raster_columns_to_window(
+            sample_axis,
+            waveform_values,
+            axis_min=axis_min,
+            axis_max=axis_max,
+        )
         extent = [
-            axis_min,
-            axis_max,
+            float(np.nanmin(raster_axis)),
+            float(np.nanmax(raster_axis)),
             float(np.nanmax(raster_depth)),
             float(np.nanmin(raster_depth)),
         ]
@@ -2640,7 +2710,7 @@ class MatplotlibRenderer(Renderer):
         self._draw_raster_waveforms(
             ax,
             depth=waveform_depth,
-            x_axis=x_axis,
+            x_axis=waveform_axis,
             values=waveform_values,
             waveform=element.waveform,
             opacity=element.style.opacity,

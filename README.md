@@ -9,13 +9,15 @@ The project is intentionally renderer-first:
 
 ## Status
 
-This repository currently contains the initial scaffold:
+This repository currently contains the current MVP baseline:
 - normalized data objects for scalar, array, and raster channels
 - a printable log document model with tracks, styles, headers, and footers
 - YAML template loading
 - a physical page layout engine
 - optional `matplotlib` and `plotly` renderer backends
 - optional LAS and DLIS ingestion adapters
+- DLIS VDL/WF1-style array support with derived micro-time sample axes
+- printable VDL density and waveform array rendering
 
 ## Architecture
 
@@ -77,7 +79,11 @@ See [examples/triple_combo.yaml](examples/triple_combo.yaml).
 For scale/grid behavior examples, see [examples/log_scale_options.log.yaml](examples/log_scale_options.log.yaml).
 For resistivity-style scales and wrapped log demo, see
 [examples/resistivity_scale_conventions.log.yaml](examples/resistivity_scale_conventions.log.yaml).
-For array-lane MVP config, see [examples/cbl_vdl_array_mvp.log.yaml](examples/cbl_vdl_array_mvp.log.yaml).
+For VDL density, waveform overlay, and feet-based comparison examples, see:
+- [examples/cbl_vdl_array_mvp.log.yaml](examples/cbl_vdl_array_mvp.log.yaml)
+- [examples/cbl_vdl_array_overlay.log.yaml](examples/cbl_vdl_array_overlay.log.yaml)
+- [examples/cbl_comparison_feet.log.yaml](examples/cbl_comparison_feet.log.yaml)
+- [examples/cbl_comparison_feet_full.log.yaml](examples/cbl_comparison_feet_full.log.yaml)
 
 ## Template + Savefile Model
 
@@ -110,11 +116,15 @@ Behavior:
   - `wrap: true` to enable with default curve color.
   - `wrap: { enabled: true, color: "#ef4444" }` to color wrapped segments explicitly.
 - Raster bindings support display controls:
-  - `profile` (`generic` or `vdl`)
+  - `profile` (`generic`, `vdl`, or `waveform`)
   - `normalization` (`auto`, `none`, `trace_maxabs`, `global_maxabs`)
   - `colorbar` (`true/false` or `{ enabled, label, position }`)
-  - `sample_axis` (`true/false` or `{ enabled, label, unit, ticks, min, max }`)
-  - `waveform` (`true/false` or `{ enabled, stride, amplitude_scale, color, line_width, max_traces }`)
+  - `sample_axis`
+    (`true/false` or `{ enabled, label, unit, ticks, min, max, source_origin, source_step }`)
+  - `waveform`
+    (`true/false` or
+    `{ enabled, stride, amplitude_scale, color, line_width, max_traces, fill,
+    positive_fill_color, negative_fill_color, invert_fill_polarity }`)
 - Multiple curves per track are supported by assigning multiple bindings to the same `track_id`.
 - Section placeholders are first-class in YAML:
   - `document.layout.heading`
@@ -130,6 +140,40 @@ Behavior:
   depth-continuous strip segments without vertical blank gaps while keeping readability.
 - Matplotlib visuals can be configured in YAML using `render.matplotlib.style` instead of
   hardcoded renderer values.
+- For DLIS array channels, `sample_axis.min/max` crops the actual waveform/raster columns to the
+  selected window. It does not relabel the full array.
+- When DLIS tool metadata exposes micro-time sampling, the loader derives the sample axis
+  automatically. When vendor output still needs alignment tuning, the final user can override:
+  - `sample_axis.source_origin`
+  - `sample_axis.source_step`
+
+Example VDL binding with explicit user-tunable sample axis:
+
+```yaml
+document:
+  bindings:
+    channels:
+      - section: main
+        channel: VDL
+        track_id: vdl
+        kind: raster
+        profile: vdl
+        style:
+          colormap: gray_r
+        sample_axis:
+          enabled: false
+          unit: us
+          source_origin: 40
+          source_step: 10
+          min: 200
+          max: 1200
+          ticks: 7
+        waveform:
+          enabled: true
+          stride: 6
+          amplitude_scale: 0.28
+          line_width: 0.16
+```
 
 ```yaml
 render:
@@ -191,7 +235,9 @@ Keep local input/output assets under:
 - `workspace/data/` for LAS/DLIS
 - `workspace/renders/` for generated PDF/HTML/JSON outputs
 The entire `workspace/` folder is excluded from git.
-Note: LAS ingestion is implemented; DLIS normalization is still scaffolded.
+Note: DLIS normalization now supports scalar channels plus VDL/WF1-style array channels with
+derived sample axes. Exact micro-time origin can still be tuned per savefile when matching
+vendor-generated logs.
 
 ## Project Memory
 

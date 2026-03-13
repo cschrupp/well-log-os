@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+import numpy as np
+
 from ..errors import TemplateValidationError
 from ..units import DEFAULT_UNITS, SimpleUnitRegistry
 from .dataset import WellDataset
@@ -354,6 +356,8 @@ class RasterElement:
     sample_axis_enabled: bool = False
     sample_axis_label: str | None = None
     sample_axis_unit: str | None = None
+    sample_axis_source_origin: float | None = None
+    sample_axis_source_step: float | None = None
     sample_axis_min: float | None = None
     sample_axis_max: float | None = None
     sample_axis_tick_count: int = 5
@@ -376,6 +380,14 @@ class RasterElement:
             raise ValueError("Raster sample_axis_label must be non-empty when provided.")
         if self.sample_axis_unit is not None and not str(self.sample_axis_unit).strip():
             raise ValueError("Raster sample_axis_unit must be non-empty when provided.")
+        has_source_origin = self.sample_axis_source_origin is not None
+        has_source_step = self.sample_axis_source_step is not None
+        if has_source_origin != has_source_step:
+            raise ValueError(
+                "Raster sample_axis_source_origin and sample_axis_source_step must be set together."
+            )
+        if has_source_step and np.isclose(float(self.sample_axis_source_step), 0.0):
+            raise ValueError("Raster sample_axis_source_step must be non-zero.")
         has_min = self.sample_axis_min is not None
         has_max = self.sample_axis_max is not None
         if has_min != has_max:

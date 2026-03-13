@@ -1,0 +1,114 @@
+template:
+  path: ../templates/wireline_base.template.yaml
+version: 1
+name: CBL VDL Array Extreme Contrast
+render:
+  output_path: ../workspace/renders/CBL_VDL_array_extreme_contrast.pdf
+  dpi: 300
+  continuous_strip_page_height_mm: 297
+document:
+  layout:
+    heading:
+      enabled: true
+    comments: []
+    log_sections:
+      - id: main
+        title: CBL VDL Array Extreme Contrast
+        subtitle: Variable-density display with near-binary contrast clipping
+        data:
+          source_path: ../workspace/data/CBL_Main.dlis
+          source_format: dlis
+        tracks:
+          - id: depth
+            title: Depth
+            kind: reference
+            width_mm: 16
+            position: 1
+            reference:
+              axis: depth
+              define_layout: true
+              unit: m
+              scale_ratio: 200
+              major_step: 50
+              secondary_grid:
+                display: true
+                line_count: 5
+          - id: cbl
+            title: CBL 0-100
+            kind: normal
+            width_mm: 28
+            position: 2
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 4
+                  spacing_mode: count
+                secondary:
+                  scale: linear
+                  line_count: 4
+                  spacing_mode: count
+          - id: vdl_array
+            title: VDL Array
+            kind: array
+            width_mm: 42
+            position: 3
+            track_header:
+              divisions:
+                enabled: true
+                reserve_space: true
+                line_units: 1
+            x_scale:
+              kind: linear
+              min: 200
+              max: 1200
+    tail:
+      enabled: true
+  bindings:
+    on_missing: skip
+    channels:
+      - section: main
+        channel: CBL
+        track_id: cbl
+        kind: curve
+        style:
+          color: "#1f2937"
+        scale:
+          kind: linear
+          min: 0
+          max: 100
+      - section: main
+        channel: VDL
+        track_id: vdl_array
+        kind: raster
+        label: VDL VariableDensity (VDL) QSLT-B
+        profile: vdl
+        normalization: auto
+        waveform_normalization: auto
+        show_raster: true
+        clip_percentiles:
+          - 49
+          - 51
+        interpolation: nearest
+        style:
+          colormap: gray_r
+        colorbar:
+          enabled: true
+          label: Amplitude
+          position: header
+        sample_axis:
+          enabled: false
+          unit: us
+          min: 200
+          max: 1200
+          ticks: 7
+        waveform:
+          enabled: false
+          stride: 5
+          amplitude_scale: 0.35
+          color: "#5b3f8c"
+          line_width: 0.22
+          fill: true
+          positive_fill_color: "#000000"
+          negative_fill_color: "#ffffff"
+          invert_fill_polarity: true

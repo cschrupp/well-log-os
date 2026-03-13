@@ -1,0 +1,328 @@
+template:
+  path: ../templates/wireline_base.template.yaml
+version: 1
+name: CBL Comparison in Feet
+render:
+  output_path: ../workspace/renders/CBL_comparison_feet_full.pdf
+  dpi: 300
+  continuous_strip_page_height_mm: 297
+document:
+  page:
+    margin_left_mm: 0
+    margin_right_mm: 8
+    margin_top_mm: 0
+    margin_bottom_mm: 0
+    track_gap_mm: 0
+    header_height_mm: 0
+    track_header_height_mm: 28
+    footer_height_mm: 0
+  layout:
+    heading:
+      enabled: false
+    comments: []
+    log_sections:
+      - id: main
+        title: TIME_1900 - Time Marked every 60.00 (s)
+        subtitle: ""
+        data:
+          source_path: ../workspace/data/CBL_Main.dlis
+          source_format: dlis
+        tracks:
+          - id: combo
+            title: ""
+            kind: normal
+            width_mm: 56
+            position: 1
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 4
+                  spacing_mode: count
+                secondary:
+                  scale: linear
+                  line_count: 5
+                  spacing_mode: count
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: depth
+            title: ""
+            kind: reference
+            width_mm: 14
+            position: 2
+            reference:
+              axis: depth
+              define_layout: true
+              unit: ft
+              scale_ratio: 240
+              major_step: 10
+              secondary_grid:
+                display: true
+                line_count: 5
+              header:
+                display_unit: true
+                display_scale: true
+                display_annotations: false
+              number_format:
+                format: automatic
+                precision: 0
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: false
+                  reserve_space: false
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: indicators
+            title: ""
+            kind: normal
+            width_mm: 18
+            position: 3
+            grid:
+              vertical:
+                main:
+                  visible: false
+                secondary:
+                  visible: false
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: cbl
+            title: ""
+            kind: normal
+            width_mm: 56
+            position: 4
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 2
+                  spacing_mode: count
+                secondary:
+                  scale: linear
+                  line_count: 5
+                  spacing_mode: count
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: vdl
+            title: ""
+            kind: array
+            width_mm: 58
+            position: 5
+            x_scale:
+              kind: linear
+              min: 200
+              max: 1200
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 2
+                  spacing_mode: count
+                secondary:
+                  visible: false
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+    tail:
+      enabled: false
+  bindings:
+    on_missing: skip
+    channels:
+      - section: main
+        channel: ECGR_STGC
+        track_id: combo
+        kind: curve
+        label: Gamma Ray (ECGR_STGC) QTGC-B
+        style:
+          color: "#17bf22"
+          line_width: 0.85
+        scale:
+          kind: linear
+          min: 0
+          max: 150
+      - section: main
+        channel: TT
+        track_id: combo
+        kind: curve
+        label: Transit Time for CBL (TT) QSLT-B
+        style:
+          color: "#1238ff"
+          line_width: 0.8
+        scale:
+          kind: linear
+          min: 200
+          max: 400
+          reverse: true
+      - section: main
+        channel: TENS
+        track_id: combo
+        kind: curve
+        label: Cable Tension (TENS)
+        style:
+          color: "#111111"
+          line_width: 0.7
+          line_style: "--"
+        scale:
+          kind: linear
+          min: 0
+          max: 5000
+          reverse: true
+      - section: main
+        channel: MTEM
+        track_id: combo
+        kind: curve
+        label: Mud Temperature (MTEM) LEH-MT
+        style:
+          color: "#111111"
+          line_width: 1.0
+        scale:
+          kind: linear
+          min: 100
+          max: 500
+      - section: main
+        channel: STIT
+        track_id: indicators
+        kind: curve
+        label: Stuck Tool Indicator, Total (STIT)
+        style:
+          color: "#111111"
+          line_width: 0.7
+          opacity: 0.0
+        scale:
+          kind: linear
+          min: 0
+          max: 50
+      - section: main
+        channel: TDSP
+        track_id: indicators
+        kind: curve
+        label: Cable Drag
+        style:
+          color: "#111111"
+          line_width: 0.7
+          line_style: ":"
+          opacity: 0.0
+        scale:
+          kind: linear
+          min: 0
+          max: 50
+      - section: main
+        channel: VSEC
+        track_id: indicators
+        kind: curve
+        label: Tool_Tot. Drag
+        style:
+          color: "#111111"
+          line_width: 0.7
+          line_style: "--"
+          opacity: 0.0
+        scale:
+          kind: linear
+          min: 0
+          max: 50
+      - section: main
+        channel: CBL
+        track_id: cbl
+        kind: curve
+        label: CBL Amplitude (CBL) QSLT-B
+        style:
+          color: "#111111"
+          line_width: 0.75
+        scale:
+          kind: linear
+          min: 0
+          max: 100
+      - section: main
+        channel: CBL
+        track_id: cbl
+        kind: curve
+        label: CBL Amplitude (CBL) QSLT-B
+        style:
+          color: "#111111"
+          line_width: 0.75
+          line_style: "--"
+        scale:
+          kind: linear
+          min: 0
+          max: 10
+      - section: main
+        channel: VDL
+        track_id: vdl
+        kind: raster
+        label: VDL VariableDensity (VDL) QSLT-B
+        profile: vdl
+        normalization: auto
+        waveform_normalization: auto
+        show_raster: true
+        clip_percentiles:
+          - 1
+          - 99
+        interpolation: nearest
+        style:
+          colormap: gray_r
+        colorbar:
+          enabled: true
+          label: Amplitude
+          position: header
+        sample_axis:
+          enabled: false
+          unit: us
+          min: 200
+          max: 1200
+          ticks: 7
+        waveform:
+          enabled: false

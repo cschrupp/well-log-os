@@ -39,6 +39,126 @@ def _normalize_value_unit(unit_raw: str | None) -> str | None:
     return text or None
 
 
+def _parameter_value(parameter) -> object | None:
+    values = getattr(parameter, "values", None)
+    if values is None or len(values) == 0:
+        return None
+    return values[0]
+
+
+def _parameter_float(parameter) -> float | None:
+    value = _parameter_value(parameter)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _micro_time_axis_from_axis(axis_obj, sample_count: int) -> tuple[np.ndarray, str | None] | None:
+    coordinates = list(getattr(axis_obj, "coordinates", []) or [])
+    if coordinates:
+        start = float(coordinates[0])
+    else:
+        start = 0.0
+
+    spacing = getattr(axis_obj, "spacing", None)
+    step: float | None = None
+    if spacing not in (None, ""):
+        try:
+            step = float(spacing)
+        except (TypeError, ValueError):
+            step = None
+    if step is None and len(coordinates) >= 2:
+        step = float(coordinates[1]) - float(coordinates[0])
+    if step is None or np.isclose(step, 0.0):
+        return None
+
+    units = _normalize_value_unit(getattr(axis_obj, "units", None))
+    axis_id = str(getattr(axis_obj, "axis_id", "") or "").strip().upper()
+    if units is None and axis_id == "MICRO_TIME":
+        units = "us"
+    sample_axis = start + abs(step) * np.arange(sample_count, dtype=float)
+    return sample_axis, units
+
+
+def _micro_time_axis_from_tool(channel_obj, logical_file, sample_count: int) -> tuple[
+    np.ndarray | None,
+    str | None,
+    dict[str, object],
+]:
+    source_tool = getattr(channel_obj, "source", None)
+    if source_tool is None or not hasattr(source_tool, "parameters"):
+        return None, None, {}
+
+    parameters = {
+        str(parameter.name): parameter
+        for parameter in getattr(source_tool, "parameters", [])
+    }
+    metadata: dict[str, object] = {}
+    for name in ("DSIN", "TSTE", "DWCO", "TLL_UT", "TUL_UT", "TWID_UT", "VDM"):
+        parameter = parameters.get(name)
+        if parameter is None:
+            continue
+        value = _parameter_value(parameter)
+        if value is not None:
+            metadata[name] = value
+
+    digitizer_word_count = _parameter_float(parameters.get("DWCO"))
+    if digitizer_word_count is not None and int(round(digitizer_word_count)) != sample_count:
+        return None, None, metadata
+
+    tool_origin = getattr(source_tool, "origin", None)
+    for axis_obj in getattr(logical_file, "axes", []) or []:
+        axis_id = str(getattr(axis_obj, "axis_id", "") or "").strip().upper()
+        if axis_id != "MICRO_TIME":
+            continue
+        axis_origin = getattr(axis_obj, "origin", None)
+        if tool_origin is not None and axis_origin is not None and tool_origin != axis_origin:
+            continue
+        axis_result = _micro_time_axis_from_axis(axis_obj, sample_count)
+        if axis_result is not None:
+            sample_axis, sample_unit = axis_result
+            metadata["sample_axis_source"] = "tool_axis"
+            return sample_axis, sample_unit, metadata
+
+    digitizer_sample_interval = _parameter_float(parameters.get("DSIN"))
+    if digitizer_sample_interval is None or np.isclose(digitizer_sample_interval, 0.0):
+        return None, None, metadata
+    sample_axis = abs(digitizer_sample_interval) * np.arange(sample_count, dtype=float)
+    metadata["sample_axis_source"] = "digitizer_interval"
+    return sample_axis, "us", metadata
+
+
+def _derive_raster_sample_axis(
+    channel_obj,
+    logical_file,
+    values_2d: np.ndarray,
+) -> tuple[np.ndarray, str | None, str, dict[str, object]]:
+    sample_count = values_2d.shape[1]
+    axis_candidates = list(getattr(channel_obj, "axis", []) or [])
+    for axis_obj in axis_candidates:
+        axis_id = str(getattr(axis_obj, "axis_id", "") or "").strip().upper()
+        if axis_id not in {"MICRO_TIME", "TIME"}:
+            continue
+        axis_result = _micro_time_axis_from_axis(axis_obj, sample_count)
+        if axis_result is None:
+            continue
+        sample_axis, sample_unit = axis_result
+        return sample_axis, sample_unit, "time", {"sample_axis_source": "channel_axis"}
+
+    sample_axis, sample_unit, metadata = _micro_time_axis_from_tool(
+        channel_obj,
+        logical_file,
+        sample_count,
+    )
+    if sample_axis is not None:
+        return sample_axis, sample_unit, "time", metadata
+
+    return np.arange(sample_count, dtype=float), None, "sample", {}
+
+
 def _extract_well_metadata(logical_file) -> dict[str, str]:
     metadata: dict[str, str] = {}
     origins = getattr(logical_file, "origins", []) or []
@@ -95,6 +215,7 @@ def _build_raster_channel(
     *,
     channel_name: str,
     channel_obj,
+    logical_file,
     depth: np.ndarray,
     depth_unit: str,
     values: np.ndarray,
@@ -103,7 +224,11 @@ def _build_raster_channel(
     values_2d = np.asarray(values, dtype=float)
     if values_2d.ndim > 2:
         values_2d = values_2d.reshape(values_2d.shape[0], -1)
-    sample_axis = np.arange(values_2d.shape[1], dtype=float)
+    sample_axis, sample_unit, sample_label, axis_metadata = _derive_raster_sample_axis(
+        channel_obj,
+        logical_file,
+        values_2d,
+    )
     return RasterChannel(
         mnemonic=channel_name,
         depth=depth,
@@ -111,8 +236,8 @@ def _build_raster_channel(
         values=values_2d,
         value_unit=_normalize_value_unit(getattr(channel_obj, "units", None)),
         sample_axis=sample_axis,
-        sample_unit=None,
-        sample_label="sample",
+        sample_unit=sample_unit,
+        sample_label=sample_label,
         description=str(getattr(channel_obj, "long_name", "") or ""),
         source=source,
         metadata={
@@ -122,6 +247,7 @@ def _build_raster_channel(
             "properties": list(getattr(channel_obj, "properties", []) or []),
             "source_object": str(getattr(channel_obj, "source", "") or ""),
             "channel_type": "raster",
+            **axis_metadata,
         },
     )
 
@@ -211,6 +337,7 @@ def load_dlis(path: str | Path):
                 candidate = _build_raster_channel(
                     channel_name=channel_name,
                     channel_obj=channel,
+                    logical_file=logical_file,
                     depth=depth,
                     depth_unit=depth_unit,
                     values=values,

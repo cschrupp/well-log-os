@@ -1,6 +1,6 @@
 # well_log_os Decision Log
 
-Last updated: 2026-03-09
+Last updated: 2026-03-12
 
 ## Purpose
 
@@ -43,6 +43,8 @@ This file records project decisions that should remain stable unless explicitly 
   - `enabled` to show/hide content
   - `reserve_space` to preserve layout slot when hidden
   - `line_units` to control relative vertical allocation
+- Raster sample axes may be auto-derived from source metadata, but must remain user-overridable in
+  logfile YAML for vendor-parity tuning.
 
 ## Rendering Decisions
 
@@ -51,6 +53,11 @@ This file records project decisions that should remain stable unless explicitly 
 - Depth grid cadence is template-controlled (`depth.major_step`, `depth.minor_step`).
 - Markers and zones are top-level annotation objects.
 - Header slot geometry is reserved to prevent overlaps.
+- Array rendering profiles are explicit:
+  - `vdl` for density-style Variable Density Log display
+  - `waveform` for wiggle/signature-style display without mandatory raster background
+- Selected array sample-axis windows crop the underlying data to the requested interval; they do
+  not relabel the full stored waveform width.
 
 ## Tooling and Process Decisions
 

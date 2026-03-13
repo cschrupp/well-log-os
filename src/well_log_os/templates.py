@@ -153,11 +153,20 @@ def _parse_raster_sample_axis_config(
     value: Any,
     *,
     context: str,
-) -> tuple[bool, str | None, str | None, int, float | None, float | None]:
+) -> tuple[
+    bool,
+    str | None,
+    str | None,
+    int,
+    float | None,
+    float | None,
+    float | None,
+    float | None,
+]:
     if value is None:
-        return False, None, None, 5, None, None
+        return False, None, None, 5, None, None, None, None
     if isinstance(value, bool):
-        return value, None, None, 5, None, None
+        return value, None, None, 5, None, None, None, None
 
     sample_axis = _ensure_mapping(value, context=context)
     enabled = bool(sample_axis.get("enabled", True))
@@ -184,7 +193,26 @@ def _parse_raster_sample_axis_config(
     axis_max = float(max_value) if max_value is not None else None
     if axis_min is not None and axis_max is not None and np.isclose(axis_min, axis_max):
         raise TemplateValidationError(f"{context}.min and {context}.max must differ.")
-    return enabled, label_text, unit_text, tick_count, axis_min, axis_max
+    source_origin_value = sample_axis.get("source_origin")
+    source_step_value = sample_axis.get("source_step")
+    if (source_origin_value is None) != (source_step_value is None):
+        raise TemplateValidationError(
+            f"{context}.source_origin and {context}.source_step must be set together."
+        )
+    source_origin = float(source_origin_value) if source_origin_value is not None else None
+    source_step = float(source_step_value) if source_step_value is not None else None
+    if source_step is not None and np.isclose(source_step, 0.0):
+        raise TemplateValidationError(f"{context}.source_step must be non-zero.")
+    return (
+        enabled,
+        label_text,
+        unit_text,
+        tick_count,
+        axis_min,
+        axis_max,
+        source_origin,
+        source_step,
+    )
 
 
 def _parse_raster_waveform_config(
@@ -709,6 +737,8 @@ def _build_track(track_data: Mapping[str, Any]) -> TrackSpec:
                 sample_axis_tick_count,
                 sample_axis_min,
                 sample_axis_max,
+                sample_axis_source_origin,
+                sample_axis_source_step,
             ) = (
                 _parse_raster_sample_axis_config(
                     element_data.get("sample_axis"),
@@ -754,6 +784,8 @@ def _build_track(track_data: Mapping[str, Any]) -> TrackSpec:
                     sample_axis_enabled=sample_axis_enabled,
                     sample_axis_label=sample_axis_label,
                     sample_axis_unit=sample_axis_unit,
+                    sample_axis_source_origin=sample_axis_source_origin,
+                    sample_axis_source_step=sample_axis_source_step,
                     sample_axis_min=sample_axis_min,
                     sample_axis_max=sample_axis_max,
                     sample_axis_tick_count=sample_axis_tick_count,
