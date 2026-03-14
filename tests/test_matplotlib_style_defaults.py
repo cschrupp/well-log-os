@@ -779,6 +779,46 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
         self.assertEqual(renderer._curve_header_label(element), "")
         self.assertEqual(renderer._curve_header_color(element), "#111111")
 
+    def test_curve_header_name_wrap_is_optional(self) -> None:
+        renderer = MatplotlibRenderer()
+        wrapped = renderer._format_curve_header_label(
+            CurveElement(
+                channel="TT",
+                label="Transit Time Overlay (TT)",
+                header_display=CurveHeaderDisplaySpec(wrap_name=True),
+            ),
+            label="Transit Time Overlay (TT)",
+            max_chars=12,
+        )
+        truncated = renderer._format_curve_header_label(
+            CurveElement(
+                channel="TT",
+                label="Transit Time Overlay (TT)",
+                header_display=CurveHeaderDisplaySpec(wrap_name=False),
+            ),
+            label="Transit Time Overlay (TT)",
+            max_chars=12,
+        )
+        self.assertIn("\n", wrapped)
+        self.assertNotIn("\n", truncated)
+        self.assertTrue(truncated.endswith("..."))
+
+    def test_header_char_budget_converts_points_to_pixels(self) -> None:
+        renderer = MatplotlibRenderer(dpi=300)
+        fig, ax = plt.subplots(figsize=(1.0, 1.0), dpi=300)
+        try:
+            budget = renderer._header_char_budget(
+                ax,
+                available_width_ratio=0.9,
+                font_size_pt=5.0,
+                char_width_ratio=0.75,
+                min_chars=4,
+            )
+        finally:
+            plt.close(fig)
+        self.assertLessEqual(budget, 14)
+        self.assertGreaterEqual(budget, 4)
+
     def test_grid_segment_positions_support_scale_modes(self) -> None:
         renderer = MatplotlibRenderer()
         linear = renderer._grid_segment_positions(4, GridScaleKind.LINEAR)

@@ -611,6 +611,7 @@ def _build_curve_header_display(data: Any) -> CurveHeaderDisplaySpec:
         show_unit=bool(display_data.get("show_unit", True)),
         show_limits=bool(display_data.get("show_limits", True)),
         show_color=bool(display_data.get("show_color", True)),
+        wrap_name=bool(display_data.get("wrap_name", False)),
     )
 
 

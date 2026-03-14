@@ -381,7 +381,7 @@ def _validate_document_bindings(
                 channel_cfg["header_display"],
                 context=f"{context}.channels[{index}].header_display",
             )
-            for key in ("show_name", "show_unit", "show_limits", "show_color"):
+            for key in ("show_name", "show_unit", "show_limits", "show_color", "wrap_name"):
                 if key in display and not isinstance(display[key], bool):
                     raise TemplateValidationError(
                         f"{context}.channels[{index}].header_display.{key} must be boolean."

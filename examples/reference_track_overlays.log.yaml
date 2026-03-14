@@ -17,7 +17,7 @@ document:
     margin_bottom_mm: 0
     track_gap_mm: 0
     header_height_mm: 0
-    track_header_height_mm: 28
+    track_header_height_mm: 34
     footer_height_mm: 0
   layout:
     heading:
@@ -109,7 +109,7 @@ document:
                   line_units: 1
                 - kind: legend
                   enabled: true
-                  line_units: 6
+                  line_units: 9
                 - kind: divisions
                   enabled: false
                   reserve_space: false
@@ -222,6 +222,8 @@ document:
         track_id: depth_overlay
         kind: curve
         label: Transit Time Overlay (TT)
+        header_display:
+          wrap_name: true
         style:
           color: "#1238ff"
           line_width: 0.6
@@ -245,6 +247,8 @@ document:
         track_id: depth_overlay
         kind: curve
         label: Tension Indicator (TENS)
+        header_display:
+          wrap_name: true
         style:
           color: "#111111"
           line_width: 0.6
@@ -269,6 +273,8 @@ document:
         track_id: depth_overlay
         kind: curve
         label: CBL Event Ticks
+        header_display:
+          wrap_name: true
         style:
           color: "#222222"
           line_width: 0.7

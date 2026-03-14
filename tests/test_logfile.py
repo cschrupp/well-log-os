@@ -928,6 +928,21 @@ class LogFileTests(unittest.TestCase):
         self.assertFalse(curve.header_display.show_unit)
         self.assertTrue(curve.header_display.show_limits)
         self.assertFalse(curve.header_display.show_color)
+        self.assertFalse(curve.header_display.wrap_name)
+
+    def test_binding_can_enable_curve_header_name_wrap(self) -> None:
+        payload = build_mapping()
+        payload["document"]["bindings"]["channels"][0]["header_display"] = {
+            "wrap_name": True,
+        }
+        spec = logfile_from_mapping(payload)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("example_input.las"),
+        )
+        curve = document.tracks[0].elements[0]
+        self.assertTrue(curve.header_display.wrap_name)
 
     def test_bindings_can_group_multiple_curves_in_one_track(self) -> None:
         payload = build_mapping()

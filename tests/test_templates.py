@@ -64,7 +64,36 @@ class TemplateTests(unittest.TestCase):
         self.assertFalse(element.header_display.show_unit)
         self.assertTrue(element.header_display.show_limits)
         self.assertFalse(element.header_display.show_color)
+        self.assertFalse(element.header_display.wrap_name)
         self.assertFalse(element.wrap)
+
+    def test_curve_element_can_enable_header_name_wrap(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "header name wrap",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "gr",
+                        "title": "GR",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "elements": [
+                            {
+                                "kind": "curve",
+                                "channel": "GR",
+                                "header_display": {
+                                    "wrap_name": True,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        element = document.tracks[0].elements[0]
+        self.assertTrue(element.header_display.wrap_name)
 
     def test_curve_element_can_parse_callouts(self) -> None:
         document = document_from_mapping(

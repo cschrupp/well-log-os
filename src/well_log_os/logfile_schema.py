@@ -752,6 +752,7 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "show_unit": {"type": "boolean"},
                 "show_limits": {"type": "boolean"},
                 "show_color": {"type": "boolean"},
+                "wrap_name": {"type": "boolean"},
             },
         },
         "curveWrap": {

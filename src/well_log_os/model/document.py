@@ -303,6 +303,7 @@ class CurveHeaderDisplaySpec:
     show_unit: bool = True
     show_limits: bool = True
     show_color: bool = True
+    wrap_name: bool = False
 
 
 @dataclass(slots=True)

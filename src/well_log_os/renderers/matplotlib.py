@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import textwrap
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -1582,6 +1583,57 @@ class MatplotlibRenderer(Renderer):
             return ""
         return element.label or element.channel
 
+    def _header_char_budget(
+        self,
+        ax,
+        *,
+        available_width_ratio: float,
+        font_size_pt: float,
+        char_width_ratio: float,
+        min_chars: int,
+    ) -> int:
+        available_px = max(ax.bbox.width * available_width_ratio, 1.0)
+        dpi = float(getattr(ax.figure, "dpi", 72.0) or 72.0)
+        approx_char_px = max(font_size_pt * (dpi / 72.0) * char_width_ratio, 1.0)
+        return max(min_chars, int(available_px / approx_char_px))
+
+    def _format_curve_header_label(
+        self,
+        element: CurveElement,
+        *,
+        label: str,
+        max_chars: int,
+    ) -> str:
+        if not label:
+            return ""
+        if max_chars <= 0:
+            return ""
+        if not element.header_display.wrap_name:
+            if len(label) > max_chars:
+                if max_chars <= 3:
+                    return label[:max_chars]
+                return f"{label[: max_chars - 3]}..."
+            return label
+
+        wrapped = textwrap.wrap(
+            label,
+            width=max_chars,
+            break_long_words=False,
+            break_on_hyphens=False,
+            max_lines=2,
+            placeholder="...",
+        )
+        if not wrapped or any(len(line) > max_chars for line in wrapped):
+            wrapped = textwrap.wrap(
+                label,
+                width=max_chars,
+                break_long_words=True,
+                break_on_hyphens=False,
+                max_lines=2,
+                placeholder="...",
+            )
+        return "\n".join(wrapped) if wrapped else label
+
     def _curve_header_line_style(self, element: CurveElement) -> str:
         if not element.header_display.show_color:
             return "-"
@@ -1975,14 +2027,12 @@ class MatplotlibRenderer(Renderer):
                         max_pt=float(track_header_style["legend_row_max_pt"]),
                     )
                     label = self._raster_header_label(target, channel)
-                    available_px = max(ax.bbox.width * 0.9, 1.0)
-                    approx_char_px = max(
-                        fontsize * float(track_header_style["legend_char_width_ratio"]),
-                        1.0,
-                    )
-                    max_chars = max(
-                        int(track_header_style["legend_min_chars"]),
-                        int(available_px / approx_char_px),
+                    max_chars = self._header_char_budget(
+                        ax,
+                        available_width_ratio=0.9,
+                        font_size_pt=fontsize,
+                        char_width_ratio=float(track_header_style["legend_char_width_ratio"]),
+                        min_chars=int(track_header_style["legend_min_chars"]),
                     )
                     if len(label) > max_chars:
                         label = f"{label[: max_chars - 3]}..."
@@ -2041,15 +2091,18 @@ class MatplotlibRenderer(Renderer):
                 max_pt=float(track_header_style["legend_row_max_pt"]),
             )
             label = self._curve_header_label(element)
-            available_px = max(ax.bbox.width * 0.9, 1.0)
-            approx_char_px = max(
-                fontsize * float(track_header_style["legend_char_width_ratio"]), 1.0
+            max_chars = self._header_char_budget(
+                ax,
+                available_width_ratio=0.9,
+                font_size_pt=fontsize,
+                char_width_ratio=float(track_header_style["legend_char_width_ratio"]),
+                min_chars=int(track_header_style["legend_min_chars"]),
             )
-            max_chars = max(
-                int(track_header_style["legend_min_chars"]), int(available_px / approx_char_px)
+            label = self._format_curve_header_label(
+                element,
+                label=label,
+                max_chars=max_chars,
             )
-            if len(label) > max_chars:
-                label = f"{label[: max_chars - 3]}..."
 
             row_color = self._curve_header_color(element)
             ax.text(
@@ -2061,6 +2114,8 @@ class MatplotlibRenderer(Renderer):
                 va="center",
                 fontsize=fontsize,
                 color=row_color,
+                linespacing=0.9,
+                multialignment="center",
                 clip_on=True,
             )
 
@@ -2096,16 +2151,18 @@ class MatplotlibRenderer(Renderer):
                 max_pt=float(track_header_style["legend_row_max_pt"]),
             )
             label = self._curve_header_label(element)
-            available_px = max(ax.bbox.width * 0.9, 1.0)
-            approx_char_px = max(
-                name_fontsize * float(track_header_style["legend_char_width_ratio"]), 1.0
+            max_chars = self._header_char_budget(
+                ax,
+                available_width_ratio=0.9,
+                font_size_pt=name_fontsize,
+                char_width_ratio=float(track_header_style["legend_char_width_ratio"]),
+                min_chars=int(track_header_style["legend_min_chars"]),
             )
-            max_chars = max(
-                int(track_header_style["legend_min_chars"]),
-                int(available_px / approx_char_px),
+            label = self._format_curve_header_label(
+                element,
+                label=label,
+                max_chars=max_chars,
             )
-            if len(label) > max_chars:
-                label = f"{label[: max_chars - 3]}..."
             ax.text(
                 0.5,
                 0.5 * (name_top + name_bottom),
@@ -2115,6 +2172,8 @@ class MatplotlibRenderer(Renderer):
                 va="center",
                 fontsize=name_fontsize,
                 color=row_color,
+                linespacing=0.9,
+                multialignment="center",
                 clip_on=True,
             )
 
@@ -2266,14 +2325,12 @@ class MatplotlibRenderer(Renderer):
                 max_pt=fill_row_font_max,
             )
             label = self._curve_fill_header_label(element)
-            available_px = max(ax.bbox.width * 0.76, 1.0)
-            approx_char_px = max(
-                fontsize * float(track_header_style["legend_char_width_ratio"]),
-                1.0,
-            )
-            max_chars = max(
-                int(track_header_style["legend_min_chars"]),
-                int(available_px / approx_char_px),
+            max_chars = self._header_char_budget(
+                ax,
+                available_width_ratio=0.76,
+                font_size_pt=fontsize,
+                char_width_ratio=float(track_header_style["legend_char_width_ratio"]),
+                min_chars=int(track_header_style["legend_min_chars"]),
             )
             if len(label) > max_chars:
                 label = f"{label[: max_chars - 3]}..."
