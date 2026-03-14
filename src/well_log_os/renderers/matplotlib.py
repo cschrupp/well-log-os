@@ -2585,7 +2585,7 @@ class MatplotlibRenderer(Renderer):
             self._apply_scale(ax, track)
         self._draw_vertical_grid_lines(ax, track, window, dataset)
         show_sample_axis = False
-        if track.kind == TrackKind.ARRAY:
+        if self._should_draw_array_plot_sample_axis(page_layout, track):
             show_sample_axis = self._draw_array_sample_axis(ax, track, dataset)
         ax.tick_params(
             axis="x",
@@ -2609,6 +2609,14 @@ class MatplotlibRenderer(Renderer):
         if self._is_reference_track(track) or self._is_annotation_track(track):
             return False
         return self._curve_count(track) > 1
+
+    def _track_has_bottom_header_on_page(self, page_layout, track) -> bool:
+        return any(frame.track is track for frame in page_layout.track_header_bottom_frames)
+
+    def _should_draw_array_plot_sample_axis(self, page_layout, track) -> bool:
+        if track.kind != TrackKind.ARRAY:
+            return False
+        return not self._track_has_bottom_header_on_page(page_layout, track)
 
     def _configure_independent_curve_axis(self, ax) -> None:
         import matplotlib.ticker as mticker

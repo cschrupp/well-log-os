@@ -24,6 +24,7 @@ from well_log_os import (
     document_from_mapping,
 )
 from well_log_os.errors import TemplateValidationError
+from well_log_os.layout import LayoutEngine
 from well_log_os.renderers.matplotlib import (
     DEFAULT_MPL_STYLE_PATH,
     MatplotlibRenderer,
@@ -1694,6 +1695,38 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
             result = renderer.render(document, dataset, output_path=output)
             self.assertTrue(output.exists())
             self.assertEqual(result.page_count, 1)
+
+    def test_array_plot_sample_axis_is_suppressed_when_bottom_header_exists(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "array footer header suppression",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "depth_range": [1000.0, 1120.0],
+                "tracks": [
+                    {
+                        "id": "vdl",
+                        "title": "VDL",
+                        "kind": "array",
+                        "width_mm": 42,
+                        "elements": [
+                            {
+                                "kind": "raster",
+                                "channel": "VDL",
+                                "sample_axis": {"enabled": True, "label": "Time (us)"},
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        renderer = MatplotlibRenderer()
+        dataset = WellDataset(name="array footer header suppression")
+        layouts = LayoutEngine().layout(document, dataset)
+        self.assertGreater(len(layouts), 1)
+        track = document.tracks[0]
+        self.assertTrue(renderer._should_draw_array_plot_sample_axis(layouts[0], track))
+        self.assertFalse(renderer._should_draw_array_plot_sample_axis(layouts[-1], track))
 
     def test_waveform_selection_is_consistent_across_windows(self) -> None:
         document = document_from_mapping(
