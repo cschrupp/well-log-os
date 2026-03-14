@@ -189,7 +189,9 @@ Track-header legend space auto-fits to curve count:
 - page `track_header_height_mm` is increased when needed to preserve readable legend rows
 - multi-curve headers render per-curve blocks (name row + scale row) with curve-colored separators
 - each curve can control header visibility via `document.bindings.channels[*].header_display`:
-  - `show_name`, `show_unit`, `show_limits`, `show_color`
+  - `show_name`, `show_unit`, `show_limits`, `show_color`, `wrap_name`
+- `header_display.wrap_name: true` wraps curve labels to at most two centered lines at word
+  boundaries; when disabled, labels keep the default truncation behavior.
 - curve `scale.kind` supports `linear`, `log`/`logarithmic`, and `tangential`
 - in paired mode, each curve is ordered as `name` then `scale` immediately below.
 - paired-mode spacing can be tuned with `render.matplotlib.style.track_header.paired_scale_text_offset_ratio`.
@@ -201,6 +203,8 @@ Track-header legend space auto-fits to curve count:
 - array-track property groups follow the same fixed-height behavior as curve headers.
 - reference-track overlay properties stay inside the legend slot; the scale slot remains reserved
   for the reference axis text (for example `ft 1:240`).
+- Narrow reference-track overlay legends can combine `header_display.wrap_name: true` with larger
+  legend `line_units` to keep long overlay names readable without widening the track.
 - each `layout.log_sections[*]` may define:
   - `title` (required to render the section banner)
   - `subtitle` (optional)

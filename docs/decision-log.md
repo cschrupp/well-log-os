@@ -74,6 +74,8 @@ This file records project decisions that should remain stable unless explicitly 
   log section bounds and rendered inline at those generated depths.
 - Reference-track headers keep their own scale/unit row and use the legend slot for overlay
   properties when legends are enabled.
+- Curve-header label wrapping is opt-in per curve through `header_display.wrap_name`; the default
+  remains truncation to keep existing header layouts stable.
 
 ## Tooling and Process Decisions
 

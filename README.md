@@ -152,6 +152,9 @@ Behavior:
   - `mode: ticks` for thresholded event-tick rendering from scalar channels
 - Reference-track headers can now keep the reference scale row while rendering overlay properties in
   the legend slot when `track_header.legend.enabled: true`.
+- Curve header labels can opt into two-line wrapping with
+  `document.bindings.channels[*].header_display.wrap_name: true`, which is useful for narrow track
+  headers such as reference-track overlay legends.
 - Reference tracks support local event objects under `reference.events` for one-off markers such as
   casing shoe, readings start, or tool-state transitions.
 - Callout repetition is section-relative. `top`, `bottom`, and `top_and_bottom` generate repeated
