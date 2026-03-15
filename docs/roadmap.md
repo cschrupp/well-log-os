@@ -1,6 +1,6 @@
 # well_log_os Roadmap
 
-Last updated: 2026-03-14
+Last updated: 2026-03-15
 
 ## Scope Summary
 
@@ -41,6 +41,7 @@ Decision history is tracked in `docs/decision-log.md`.
   - reference-track scalar overlay modes (`curve`, `indicator`, `ticks`)
   - reference-track-local event objects for non-channel markers
   - reference-track headers that keep the layout scale row while exposing overlay properties
+  - annotation-track `interval` and `text` rendering with lane-local spans and wrapped notes
   - array-lane raster controls (`colorbar`, `sample_axis`, waveform overlay)
   - waveform-only array rendering profile
   - VDL density rendering with grayscale amplitude mapping
@@ -76,7 +77,7 @@ Compared against `workspace/renders/CBL_log_example.Pdf`, the current renderer i
 
 - Cover/disclaimer/contents pages and report-style front matter.
 - Parameter-table sections (channel processing, depth zone, tool control).
-- Dedicated annotation tracks, event glyphs, and richer non-curve callout lanes.
+- Annotation event glyphs, richer non-curve callout lanes, and collision-aware annotation layout.
 - Composite lane logic with custom legend/table blocks.
 - Multi-page report composition mode (in addition to continuous strip mode).
 - Richer visual theming and table/border styles for commercial-style output.
@@ -110,6 +111,7 @@ Implementable now (already in project):
 Near-term additions (next phases):
 
 - Points/symbol mode (`marker` type, size, optional color-by-variable).
+- Annotation-track marker/arrow/glyph objects and collision-aware placement.
 - Vertical thresholds and advanced repeat/wrap controls (count, offset, style).
 - Per-curve decimation/display optimization policy.
 - Per-curve number formatting for header limits (separate from label mode).

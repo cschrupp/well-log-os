@@ -9,6 +9,8 @@ import yaml
 
 from .errors import TemplateValidationError
 from .model import (
+    AnnotationIntervalSpec,
+    AnnotationTextSpec,
     CurveCalloutSpec,
     CurveElement,
     CurveFillBaselineSpec,
@@ -939,6 +941,107 @@ def _build_zones(data: Any) -> tuple[ZoneSpec, ...]:
     return tuple(zones)
 
 
+def _build_annotation_objects(data: Any) -> tuple[AnnotationIntervalSpec | AnnotationTextSpec, ...]:
+    if data is None:
+        return ()
+
+    annotation_items = _ensure_sequence(data, context="annotations")
+    annotations: list[AnnotationIntervalSpec | AnnotationTextSpec] = []
+    for index, item in enumerate(annotation_items):
+        annotation_data = _ensure_mapping(item, context=f"annotations[{index}]")
+        kind = str(annotation_data.get("kind", "text")).strip().lower()
+        try:
+            if kind == "interval":
+                annotations.append(
+                    AnnotationIntervalSpec(
+                        top=float(annotation_data["top"]),
+                        base=float(annotation_data["base"]),
+                        text=str(annotation_data.get("text", "")),
+                        lane_start=float(annotation_data.get("lane_start", 0.0)),
+                        lane_end=float(annotation_data.get("lane_end", 1.0)),
+                        fill_color=str(annotation_data.get("fill_color", "#d9d9d9")),
+                        fill_alpha=float(annotation_data.get("fill_alpha", 1.0)),
+                        border_color=str(annotation_data.get("border_color", "#222222")),
+                        border_linewidth=float(annotation_data.get("border_linewidth", 0.6)),
+                        border_style=str(annotation_data.get("border_style", "-")),
+                        text_color=str(annotation_data.get("text_color", "#111111")),
+                        text_orientation=str(
+                            annotation_data.get("text_orientation", "horizontal")
+                        ),
+                        text_wrap=bool(annotation_data.get("text_wrap", True)),
+                        horizontal_alignment=str(
+                            annotation_data.get("horizontal_alignment", "center")
+                        ),
+                        vertical_alignment=str(
+                            annotation_data.get("vertical_alignment", "center")
+                        ),
+                        font_size=float(annotation_data.get("font_size", 7.0)),
+                        font_weight=str(annotation_data.get("font_weight", "normal")),
+                        font_style=str(annotation_data.get("font_style", "normal")),
+                        padding=float(annotation_data.get("padding", 0.02)),
+                    )
+                )
+                continue
+            if kind == "text":
+                annotations.append(
+                    AnnotationTextSpec(
+                        text=str(annotation_data["text"]),
+                        depth=(
+                            float(annotation_data["depth"])
+                            if annotation_data.get("depth") is not None
+                            else None
+                        ),
+                        top=(
+                            float(annotation_data["top"])
+                            if annotation_data.get("top") is not None
+                            else None
+                        ),
+                        base=(
+                            float(annotation_data["base"])
+                            if annotation_data.get("base") is not None
+                            else None
+                        ),
+                        lane_start=float(annotation_data.get("lane_start", 0.0)),
+                        lane_end=float(annotation_data.get("lane_end", 1.0)),
+                        color=str(annotation_data.get("color", "#111111")),
+                        background_color=(
+                            str(annotation_data["background_color"])
+                            if annotation_data.get("background_color") is not None
+                            else None
+                        ),
+                        border_color=(
+                            str(annotation_data["border_color"])
+                            if annotation_data.get("border_color") is not None
+                            else None
+                        ),
+                        border_linewidth=(
+                            float(annotation_data["border_linewidth"])
+                            if annotation_data.get("border_linewidth") is not None
+                            else None
+                        ),
+                        text_orientation=str(
+                            annotation_data.get("text_orientation", "horizontal")
+                        ),
+                        wrap=bool(annotation_data.get("wrap", True)),
+                        horizontal_alignment=str(
+                            annotation_data.get("horizontal_alignment", "center")
+                        ),
+                        vertical_alignment=str(
+                            annotation_data.get("vertical_alignment", "center")
+                        ),
+                        font_size=float(annotation_data.get("font_size", 7.0)),
+                        font_weight=str(annotation_data.get("font_weight", "normal")),
+                        font_style=str(annotation_data.get("font_style", "normal")),
+                        padding=float(annotation_data.get("padding", 0.02)),
+                    )
+                )
+                continue
+            raise TemplateValidationError(f"Invalid annotation kind {kind!r}.")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise TemplateValidationError(f"Invalid annotation at index {index}.") from exc
+    return tuple(annotations)
+
+
 def _build_track(track_data: Mapping[str, Any]) -> TrackSpec:
     kind = _parse_track_kind(track_data.get("kind", "normal"))
     elements = []
@@ -1081,6 +1184,7 @@ def _build_track(track_data: Mapping[str, Any]) -> TrackSpec:
         kind=kind,
         width_mm=float(track_data["width_mm"]),
         elements=tuple(elements),
+        annotations=_build_annotation_objects(track_data.get("annotations")),
         x_scale=_build_scale(track_data.get("x_scale")),
         header=_build_track_header(track_data.get("track_header")),
         grid=_build_grid_spec(track_data.get("grid"), context=track_context),

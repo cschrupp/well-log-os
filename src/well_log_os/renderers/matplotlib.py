@@ -14,6 +14,8 @@ import yaml
 from ..errors import DependencyUnavailableError, TemplateValidationError
 from ..layout import LayoutEngine
 from ..model import (
+    AnnotationIntervalSpec,
+    AnnotationTextSpec,
     CurveElement,
     CurveFillKind,
     FooterSpec,
@@ -1597,6 +1599,94 @@ class MatplotlibRenderer(Renderer):
         approx_char_px = max(font_size_pt * (dpi / 72.0) * char_width_ratio, 1.0)
         return max(min_chars, int(available_px / approx_char_px))
 
+    def _text_line_budget(
+        self,
+        ax,
+        *,
+        available_height_ratio: float,
+        font_size_pt: float,
+        min_lines: int = 1,
+    ) -> int:
+        available_px = max(ax.bbox.height * available_height_ratio, 1.0)
+        dpi = float(getattr(ax.figure, "dpi", 72.0) or 72.0)
+        approx_line_px = max(font_size_pt * (dpi / 72.0) * 1.25, 1.0)
+        return max(min_lines, int(available_px / approx_line_px))
+
+    def _wrap_box_text(
+        self,
+        ax,
+        *,
+        text: str,
+        available_width_ratio: float,
+        available_height_ratio: float,
+        font_size_pt: float,
+        wrap_enabled: bool,
+    ) -> str:
+        if not text:
+            return ""
+        if not wrap_enabled:
+            return text
+
+        max_chars = self._header_char_budget(
+            ax,
+            available_width_ratio=max(available_width_ratio, 0.01),
+            font_size_pt=font_size_pt,
+            char_width_ratio=0.62,
+            min_chars=1,
+        )
+        max_lines = self._text_line_budget(
+            ax,
+            available_height_ratio=max(available_height_ratio, 0.01),
+            font_size_pt=font_size_pt,
+            min_lines=1,
+        )
+        wrapper = textwrap.TextWrapper(
+            width=max_chars,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+        force_wrapper = textwrap.TextWrapper(
+            width=max_chars,
+            break_long_words=True,
+            break_on_hyphens=False,
+        )
+        lines: list[str] = []
+        paragraphs = text.splitlines() or [text]
+        truncated = False
+        for paragraph_index, paragraph in enumerate(paragraphs):
+            if paragraph.strip():
+                wrapped_lines = wrapper.wrap(paragraph)
+                if not wrapped_lines:
+                    wrapped_lines = force_wrapper.wrap(paragraph)
+            else:
+                wrapped_lines = [""]
+            for line in wrapped_lines:
+                if len(lines) >= max_lines:
+                    truncated = True
+                    break
+                lines.append(line)
+            if truncated:
+                break
+            if paragraph_index != len(paragraphs) - 1:
+                if len(lines) >= max_lines:
+                    truncated = True
+                    break
+                lines.append("")
+        if not lines:
+            return text
+        if truncated:
+            last_index = min(len(lines), max_lines) - 1
+            last_line = lines[last_index].rstrip()
+            if max_chars <= 3:
+                lines[last_index] = last_line[:max_chars]
+            else:
+                if len(last_line) > max_chars - 3:
+                    last_line = last_line[: max_chars - 3].rstrip()
+                if not last_line.endswith("..."):
+                    last_line = f"{last_line}..."
+                lines[last_index] = last_line
+        return "\n".join(lines[:max_lines])
+
     def _format_curve_header_label(
         self,
         element: CurveElement,
@@ -2711,6 +2801,7 @@ class MatplotlibRenderer(Renderer):
             ax.set_xlim(0, 1)
             ax.set_xticks([])
             ax.tick_params(axis="y", length=0, labelleft=False)
+            self._draw_annotation_objects(ax, track, window)
             self._draw_marker_callouts(ax, document, window)
             return
 
@@ -3725,6 +3816,216 @@ class MatplotlibRenderer(Renderer):
                 ),
                 annotation_clip=True,
             )
+
+    def _annotation_visible_interval(
+        self,
+        top: float,
+        base: float,
+        window,
+    ) -> tuple[float, float] | None:
+        if base < window.start or top > window.stop:
+            return None
+        return max(float(top), float(window.start)), min(float(base), float(window.stop))
+
+    def _annotation_box_anchor(
+        self,
+        *,
+        lane_start: float,
+        lane_end: float,
+        top: float,
+        base: float,
+        padding: float,
+        horizontal_alignment: str,
+        vertical_alignment: str,
+    ) -> tuple[float, float]:
+        width = lane_end - lane_start
+        height = base - top
+        x_padding = width * padding
+        y_padding = height * padding
+        if horizontal_alignment == "left":
+            x = lane_start + x_padding
+        elif horizontal_alignment == "right":
+            x = lane_end - x_padding
+        else:
+            x = 0.5 * (lane_start + lane_end)
+        if vertical_alignment == "top":
+            y = top + y_padding
+        elif vertical_alignment == "bottom":
+            y = base - y_padding
+        else:
+            y = 0.5 * (top + base)
+        return x, y
+
+    def _draw_annotation_interval(self, ax, annotation: AnnotationIntervalSpec, window) -> None:
+        visible = self._annotation_visible_interval(annotation.top, annotation.base, window)
+        if visible is None:
+            return
+        top, base = visible
+        from matplotlib.patches import Rectangle
+
+        rect = Rectangle(
+            (annotation.lane_start, top),
+            annotation.lane_end - annotation.lane_start,
+            base - top,
+            facecolor=annotation.fill_color,
+            alpha=annotation.fill_alpha,
+            edgecolor=annotation.border_color,
+            linewidth=annotation.border_linewidth,
+            linestyle=annotation.border_style,
+            zorder=1.2,
+            clip_on=True,
+        )
+        ax.add_patch(rect)
+        if not annotation.text:
+            return
+        x, y = self._annotation_box_anchor(
+            lane_start=annotation.lane_start,
+            lane_end=annotation.lane_end,
+            top=top,
+            base=base,
+            padding=annotation.padding,
+            horizontal_alignment=annotation.horizontal_alignment,
+            vertical_alignment=annotation.vertical_alignment,
+        )
+        width_ratio = max(
+            annotation.lane_end - annotation.lane_start - 2 * annotation.padding,
+            0.01,
+        )
+        window_span = max(float(window.stop - window.start), 1e-9)
+        height_ratio = max((base - top) / window_span - 2 * annotation.padding, 0.01)
+        text_value = annotation.text
+        if annotation.text_orientation == "horizontal":
+            text_value = self._wrap_box_text(
+                ax,
+                text=text_value,
+                available_width_ratio=width_ratio,
+                available_height_ratio=height_ratio,
+                font_size_pt=annotation.font_size,
+                wrap_enabled=annotation.text_wrap,
+            )
+        ax.text(
+            x,
+            y,
+            text_value,
+            transform=ax.transData,
+            ha=annotation.horizontal_alignment,
+            va=annotation.vertical_alignment,
+            fontsize=annotation.font_size,
+            fontweight=annotation.font_weight,
+            fontstyle=annotation.font_style,
+            color=annotation.text_color,
+            rotation=90 if annotation.text_orientation == "vertical" else 0,
+            rotation_mode="anchor",
+            multialignment=annotation.horizontal_alignment,
+            linespacing=0.92,
+            clip_on=True,
+            zorder=1.6,
+        )
+
+    def _draw_annotation_text(self, ax, annotation: AnnotationTextSpec, window) -> None:
+        from matplotlib.patches import Rectangle
+
+        if annotation.depth is not None:
+            if annotation.depth < window.start or annotation.depth > window.stop:
+                return
+            x, y = self._annotation_box_anchor(
+                lane_start=annotation.lane_start,
+                lane_end=annotation.lane_end,
+                top=annotation.depth,
+                base=annotation.depth,
+                padding=annotation.padding,
+                horizontal_alignment=annotation.horizontal_alignment,
+                vertical_alignment="center",
+            )
+            width_ratio = max(
+                annotation.lane_end - annotation.lane_start - 2 * annotation.padding,
+                0.01,
+            )
+            height_ratio = 0.08
+            bbox = (
+                {
+                    "facecolor": annotation.background_color or "none",
+                    "edgecolor": annotation.border_color or "none",
+                    "linewidth": annotation.border_linewidth or 0.6,
+                    "boxstyle": f"square,pad={annotation.padding}",
+                }
+                if annotation.background_color is not None or annotation.border_color is not None
+                else None
+            )
+            vertical_alignment = "center"
+        else:
+            assert annotation.top is not None and annotation.base is not None
+            visible = self._annotation_visible_interval(annotation.top, annotation.base, window)
+            if visible is None:
+                return
+            top, base = visible
+            if annotation.background_color is not None or annotation.border_color is not None:
+                rect = Rectangle(
+                    (annotation.lane_start, top),
+                    annotation.lane_end - annotation.lane_start,
+                    base - top,
+                    facecolor=annotation.background_color or "none",
+                    edgecolor=annotation.border_color or "none",
+                    linewidth=annotation.border_linewidth or 0.6,
+                    linestyle="-",
+                    zorder=1.25,
+                    clip_on=True,
+                )
+                ax.add_patch(rect)
+            x, y = self._annotation_box_anchor(
+                lane_start=annotation.lane_start,
+                lane_end=annotation.lane_end,
+                top=top,
+                base=base,
+                padding=annotation.padding,
+                horizontal_alignment=annotation.horizontal_alignment,
+                vertical_alignment=annotation.vertical_alignment,
+            )
+            width_ratio = max(
+                annotation.lane_end - annotation.lane_start - 2 * annotation.padding,
+                0.01,
+            )
+            window_span = max(float(window.stop - window.start), 1e-9)
+            height_ratio = max((base - top) / window_span - 2 * annotation.padding, 0.01)
+            bbox = None
+            vertical_alignment = annotation.vertical_alignment
+
+        text_value = annotation.text
+        if annotation.text_orientation == "horizontal":
+            text_value = self._wrap_box_text(
+                ax,
+                text=text_value,
+                available_width_ratio=width_ratio,
+                available_height_ratio=height_ratio,
+                font_size_pt=annotation.font_size,
+                wrap_enabled=annotation.wrap,
+            )
+        ax.text(
+            x,
+            y,
+            text_value,
+            transform=ax.transData,
+            ha=annotation.horizontal_alignment,
+            va=vertical_alignment,
+            fontsize=annotation.font_size,
+            fontweight=annotation.font_weight,
+            fontstyle=annotation.font_style,
+            color=annotation.color,
+            rotation=90 if annotation.text_orientation == "vertical" else 0,
+            rotation_mode="anchor",
+            multialignment=annotation.horizontal_alignment,
+            linespacing=0.92,
+            bbox=bbox,
+            clip_on=True,
+            zorder=1.7,
+        )
+
+    def _draw_annotation_objects(self, ax, track, window) -> None:
+        for annotation in track.annotations:
+            if isinstance(annotation, AnnotationIntervalSpec):
+                self._draw_annotation_interval(ax, annotation, window)
+            elif isinstance(annotation, AnnotationTextSpec):
+                self._draw_annotation_text(ax, annotation, window)
 
     def _draw_curve(
         self,

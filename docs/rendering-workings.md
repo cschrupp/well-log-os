@@ -468,6 +468,101 @@ document:
         clip_percentiles: [1, 99]
         colorbar:
           enabled: true
+
+## 14) Annotation Tracks
+
+Annotation tracks render track-owned layout objects instead of channel bindings.
+
+Current object types:
+
+- `interval`
+- `text`
+
+`interval` objects are intended for lithofacies-style blocks, zonation strips, and other bounded
+display regions. `text` objects are intended for free-form notes, either at a single depth or over
+an interval.
+
+Supported interval fields:
+
+- `top`, `base`
+- `text`
+- `lane_start`, `lane_end`
+- `fill_color`, `alpha`
+- `border_color`, `border_linewidth`, `border_line_style`
+- `text_color`
+- `text_orientation` (`horizontal`, `vertical`)
+- `font_size`, `font_weight`, `font_style`
+- `wrap`
+
+Supported text fields:
+
+- `depth` or `top`/`base`
+- `text`
+- `lane_start`, `lane_end`
+- `background_color`
+- `border_color`, `border_linewidth`, `border_line_style`
+- `text_color`
+- `font_size`, `font_weight`, `font_style`
+- `text_orientation`
+- `wrap`
+
+Lane semantics:
+
+- `lane_start` / `lane_end` are normalized track fractions in `[0, 1]`
+- this allows one annotation track to contain multiple visual lanes, for example a narrow facies
+  strip plus a wider descriptive-notes area
+
+Grid behavior:
+
+- annotation tracks reuse the same `tracks[*].grid` configuration as other non-reference tracks
+- to suppress the background grid entirely, disable `horizontal.main`, `horizontal.secondary`,
+  `vertical.main`, and `vertical.secondary`
+
+Example:
+
+```yaml
+- id: lith
+  kind: annotation
+  width_mm: 38
+  grid:
+    horizontal:
+      main:
+        visible: false
+      secondary:
+        visible: false
+    vertical:
+      main:
+        visible: false
+      secondary:
+        visible: false
+  annotations:
+    - kind: interval
+      top: 670
+      base: 688
+      text: shale
+      lane_start: 0.0
+      lane_end: 0.32
+      fill_color: "#2047a3"
+      text_color: "#ffffff"
+      text_orientation: vertical
+    - kind: text
+      top: 670
+      base: 688
+      text: |
+        Dark shale with
+        moderate GR and
+        limited clean streaks.
+      lane_start: 0.36
+      lane_end: 1.0
+      background_color: "#dbe7ff"
+      border_color: "#2047a3"
+      wrap: true
+```
+
+Current boundary:
+
+- annotation `marker`, `arrow`, and `glyph` objects are not implemented yet
+- collision management between annotation objects is still pending
           label: Amplitude
           position: header
         sample_axis:

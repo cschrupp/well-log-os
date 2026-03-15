@@ -103,6 +103,133 @@ class ReferenceCurveTickSide(StrEnum):
 
 
 @dataclass(slots=True)
+class AnnotationIntervalSpec:
+    top: float
+    base: float
+    text: str = ""
+    lane_start: float = 0.0
+    lane_end: float = 1.0
+    fill_color: str = "#d9d9d9"
+    fill_alpha: float = 1.0
+    border_color: str = "#222222"
+    border_linewidth: float = 0.6
+    border_style: str = "-"
+    text_color: str = "#111111"
+    text_orientation: str = "horizontal"
+    text_wrap: bool = True
+    horizontal_alignment: str = "center"
+    vertical_alignment: str = "center"
+    font_size: float = 7.0
+    font_weight: str = "normal"
+    font_style: str = "normal"
+    padding: float = 0.02
+
+    def __post_init__(self) -> None:
+        if self.base <= self.top:
+            raise ValueError("Annotation interval base must be greater than top.")
+        if not 0.0 <= self.lane_start < self.lane_end <= 1.0:
+            raise ValueError(
+                "Annotation interval lane_start/lane_end must satisfy 0 <= start < end <= 1."
+            )
+        if not str(self.fill_color).strip():
+            raise ValueError("Annotation interval fill_color must be non-empty.")
+        if self.fill_alpha < 0 or self.fill_alpha > 1:
+            raise ValueError("Annotation interval fill_alpha must be between 0 and 1.")
+        if not str(self.border_color).strip():
+            raise ValueError("Annotation interval border_color must be non-empty.")
+        if self.border_linewidth <= 0:
+            raise ValueError("Annotation interval border_linewidth must be positive.")
+        if not str(self.border_style).strip():
+            raise ValueError("Annotation interval border_style must be non-empty.")
+        if self.text and not str(self.text).strip():
+            raise ValueError("Annotation interval text must be non-empty when provided.")
+        if not str(self.text_color).strip():
+            raise ValueError("Annotation interval text_color must be non-empty.")
+        orientation = self.text_orientation.strip().lower()
+        if orientation not in {"horizontal", "vertical"}:
+            raise ValueError(
+                "Annotation interval text_orientation must be horizontal or vertical."
+            )
+        self.text_orientation = orientation
+        if self.horizontal_alignment not in {"left", "center", "right"}:
+            raise ValueError(
+                "Annotation interval horizontal_alignment must be left, center, or right."
+            )
+        if self.vertical_alignment not in {"top", "center", "bottom"}:
+            raise ValueError(
+                "Annotation interval vertical_alignment must be top, center, or bottom."
+            )
+        if self.font_size <= 0:
+            raise ValueError("Annotation interval font_size must be positive.")
+        if self.padding < 0:
+            raise ValueError("Annotation interval padding must be non-negative.")
+
+
+@dataclass(slots=True)
+class AnnotationTextSpec:
+    text: str
+    depth: float | None = None
+    top: float | None = None
+    base: float | None = None
+    lane_start: float = 0.0
+    lane_end: float = 1.0
+    color: str = "#111111"
+    background_color: str | None = None
+    border_color: str | None = None
+    border_linewidth: float | None = None
+    text_orientation: str = "horizontal"
+    wrap: bool = True
+    horizontal_alignment: str = "center"
+    vertical_alignment: str = "center"
+    font_size: float = 7.0
+    font_weight: str = "normal"
+    font_style: str = "normal"
+    padding: float = 0.02
+
+    def __post_init__(self) -> None:
+        if not str(self.text).strip():
+            raise ValueError("Annotation text must be non-empty.")
+        if not 0.0 <= self.lane_start < self.lane_end <= 1.0:
+            raise ValueError(
+                "Annotation text lane_start/lane_end must satisfy 0 <= start < end <= 1."
+            )
+        if not str(self.color).strip():
+            raise ValueError("Annotation text color must be non-empty.")
+        if self.background_color is not None and not str(self.background_color).strip():
+            raise ValueError("Annotation text background_color must be non-empty when provided.")
+        if self.border_color is not None and not str(self.border_color).strip():
+            raise ValueError("Annotation text border_color must be non-empty when provided.")
+        if self.border_linewidth is not None and self.border_linewidth <= 0:
+            raise ValueError("Annotation text border_linewidth must be positive when provided.")
+        has_depth = self.depth is not None
+        has_interval = self.top is not None or self.base is not None
+        if has_depth == has_interval:
+            raise ValueError(
+                "Annotation text must define either depth or both top/base interval bounds."
+            )
+        if (self.top is None) != (self.base is None):
+            raise ValueError("Annotation text top and base must be set together.")
+        if self.top is not None and self.base is not None and self.base <= self.top:
+            raise ValueError("Annotation text base must be greater than top.")
+        orientation = self.text_orientation.strip().lower()
+        if orientation not in {"horizontal", "vertical"}:
+            raise ValueError("Annotation text_orientation must be horizontal or vertical.")
+        self.text_orientation = orientation
+        if self.horizontal_alignment not in {"left", "center", "right"}:
+            raise ValueError(
+                "Annotation text horizontal_alignment must be left, center, or right."
+            )
+        if self.vertical_alignment not in {"top", "center", "bottom"}:
+            raise ValueError(
+                "Annotation text vertical_alignment must be top, center, or bottom."
+            )
+        if self.font_size <= 0:
+            raise ValueError("Annotation text font_size must be positive.")
+        if self.padding < 0:
+            raise ValueError("Annotation text padding must be non-negative.")
+
+
+@dataclass(slots=True)
 class StyleSpec:
     color: str = "black"
     line_width: float = 0.8
@@ -661,6 +788,7 @@ class RasterElement:
 
 
 TrackElement = CurveElement | RasterElement
+AnnotationObject = AnnotationIntervalSpec | AnnotationTextSpec
 
 
 @dataclass(slots=True)
@@ -774,6 +902,7 @@ class TrackSpec:
     kind: TrackKind
     width_mm: float
     elements: tuple[TrackElement, ...] = ()
+    annotations: tuple[AnnotationObject, ...] = ()
     x_scale: ScaleSpec | None = None
     header: TrackHeaderSpec = field(default_factory=TrackHeaderSpec)
     grid: GridSpec = field(default_factory=GridSpec)
@@ -827,6 +956,10 @@ class TrackSpec:
         if self.kind == TrackKind.ANNOTATION and self.elements:
             raise ValueError(
                 f"Annotation track {self.id} currently does not accept curve/raster elements."
+            )
+        if self.kind != TrackKind.ANNOTATION and self.annotations:
+            raise ValueError(
+                f"Track {self.id} can only define annotation objects when kind=annotation."
             )
 
 

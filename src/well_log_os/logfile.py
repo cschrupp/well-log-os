@@ -223,6 +223,62 @@ def _validate_layout_track(track: dict[str, Any], *, context: str) -> None:
         _ = _ensure_mapping(track["grid"], context=f"{context}.grid")
     if "track_header" in track:
         _ = _ensure_mapping(track["track_header"], context=f"{context}.track_header")
+    if "annotations" in track:
+        if kind not in {"annotation"}:
+            raise TemplateValidationError(
+                f"{context}.annotations is only valid for annotation tracks."
+            )
+        annotations = _ensure_sequence(track["annotations"], context=f"{context}.annotations")
+        for index, item in enumerate(annotations):
+            annotation = _ensure_mapping(item, context=f"{context}.annotations[{index}]")
+            kind_text = str(annotation.get("kind", "text")).strip().lower()
+            if kind_text == "interval":
+                if "top" not in annotation or "base" not in annotation:
+                    raise TemplateValidationError(
+                        f"{context}.annotations[{index}] interval annotations require top and base."
+                    )
+                if float(annotation["base"]) <= float(annotation["top"]):
+                    raise TemplateValidationError(
+                        f"{context}.annotations[{index}].base must be greater than top."
+                    )
+            elif kind_text == "text":
+                if not str(annotation.get("text", "")).strip():
+                    raise TemplateValidationError(
+                        f"{context}.annotations[{index}].text must be non-empty."
+                    )
+                has_depth = annotation.get("depth") is not None
+                has_top = annotation.get("top") is not None
+                has_base = annotation.get("base") is not None
+                if has_depth == (has_top or has_base):
+                    raise TemplateValidationError(
+                        f"{context}.annotations[{index}] text annotations must define either "
+                        "depth or both top/base."
+                    )
+                if has_top != has_base:
+                    raise TemplateValidationError(
+                        f"{context}.annotations[{index}] text annotations must set "
+                        "top and base together."
+                    )
+                if has_top and float(annotation["base"]) <= float(annotation["top"]):
+                    raise TemplateValidationError(
+                        f"{context}.annotations[{index}].base must be greater than top."
+                    )
+            else:
+                raise TemplateValidationError(
+                    f"{context}.annotations[{index}].kind {kind_text!r} is invalid."
+                )
+            if "lane_start" in annotation and "lane_end" in annotation:
+                lane_start = float(annotation["lane_start"])
+                lane_end = float(annotation["lane_end"])
+                if not 0.0 <= lane_start < lane_end <= 1.0:
+                    raise TemplateValidationError(
+                        f"{context}.annotations[{index}] lane_start/lane_end must satisfy "
+                        "0 <= start < end <= 1."
+                    )
+            elif "lane_start" in annotation or "lane_end" in annotation:
+                raise TemplateValidationError(
+                    f"{context}.annotations[{index}] lane_start and lane_end must be set together."
+                )
     if kind in {"reference", "depth"} and "reference" in track:
         reference = _ensure_mapping(track["reference"], context=f"{context}.reference")
         _validate_reference_track(reference, context=f"{context}.reference")
@@ -1190,6 +1246,7 @@ def _build_empty_tracks_for_section(
             "kind": kind,
             "width_mm": float(track_data["width_mm"]),
             "elements": [],
+            "annotations": deepcopy(track_data.get("annotations", [])),
             "track_header": deepcopy(track_data.get("track_header", {})),
             "grid": deepcopy(track_data.get("grid", {})),
         }

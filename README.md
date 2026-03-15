@@ -23,6 +23,7 @@ This repository currently contains the current MVP baseline:
 - in-track curve callouts with section-relative repetition and collision avoidance
 - reference-track scalar overlay modes (`curve`, `indicator`, `ticks`)
 - reference-track event objects for local markers such as casing foot or readings start
+- annotation tracks with typed `interval` and `text` objects for zone blocks and descriptive notes
 
 ## Architecture
 
@@ -36,6 +37,8 @@ Track types are explicit: `reference`, `normal`, `array`, and `annotation`
 Array tracks can host raster data and scalar overlays, while normal/reference tracks do not accept raster elements.
 Reference tracks can host scalar overlay curves and local reference events while still defining the
 layout axis.
+Annotation tracks host lane-local interval and text objects instead of channel bindings, and reuse
+the standard per-track `grid` configuration when you want the background grid on or off.
 Set `page.continuous: true` in templates to render a single continuous-depth PDF page.
 Set `page.track_header_height_mm` to reserve a dedicated per-track header band.
 Track headers now support explicit object slots (`title`, `scale`, `legend`) with `enabled`,
@@ -98,6 +101,9 @@ For fill and callout examples, see:
 - [examples/curve_callout_bands_showcase.log.yaml](examples/curve_callout_bands_showcase.log.yaml)
 - [examples/curve_callout_bands_full.log.yaml](examples/curve_callout_bands_full.log.yaml)
 - [examples/reference_track_overlays.log.yaml](examples/reference_track_overlays.log.yaml)
+For annotation-track examples, see:
+- [examples/annotation_track_showcase.log.yaml](examples/annotation_track_showcase.log.yaml)
+- [examples/annotation_track_showcase_no_grid.log.yaml](examples/annotation_track_showcase_no_grid.log.yaml)
 
 ## Template + Savefile Model
 

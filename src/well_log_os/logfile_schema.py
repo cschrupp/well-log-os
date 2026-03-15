@@ -216,6 +216,10 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "grid": {"$ref": "#/$defs/grid"},
                 "track_header": {"$ref": "#/$defs/trackHeader"},
                 "reference": {"$ref": "#/$defs/referenceTrack"},
+                "annotations": {
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/annotationObject"},
+                },
             },
         },
         "documentBindings": {
@@ -754,6 +758,91 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "show_color": {"type": "boolean"},
                 "wrap_name": {"type": "boolean"},
             },
+        },
+        "annotationObject": {
+            "oneOf": [
+                {"$ref": "#/$defs/annotationInterval"},
+                {"$ref": "#/$defs/annotationText"},
+            ]
+        },
+        "annotationInterval": {
+            "type": "object",
+            "required": ["kind", "top", "base"],
+            "additionalProperties": False,
+            "properties": {
+                "kind": {"type": "string", "const": "interval"},
+                "top": {"type": "number"},
+                "base": {"type": "number"},
+                "text": {"type": "string"},
+                "lane_start": {"type": "number", "minimum": 0, "maximum": 1},
+                "lane_end": {"type": "number", "minimum": 0, "maximum": 1},
+                "fill_color": {"type": "string", "minLength": 1},
+                "fill_alpha": {"type": "number", "minimum": 0, "maximum": 1},
+                "border_color": {"type": "string", "minLength": 1},
+                "border_linewidth": {"type": "number", "exclusiveMinimum": 0},
+                "border_style": {"type": "string", "minLength": 1},
+                "text_color": {"type": "string", "minLength": 1},
+                "text_orientation": {
+                    "type": "string",
+                    "enum": ["horizontal", "vertical"],
+                },
+                "text_wrap": {"type": "boolean"},
+                "horizontal_alignment": {
+                    "type": "string",
+                    "enum": ["left", "center", "right"],
+                },
+                "vertical_alignment": {
+                    "type": "string",
+                    "enum": ["top", "center", "bottom"],
+                },
+                "font_size": {"type": "number", "exclusiveMinimum": 0},
+                "font_weight": {"type": "string", "minLength": 1},
+                "font_style": {"type": "string", "minLength": 1},
+                "padding": {"type": "number", "minimum": 0},
+            },
+        },
+        "annotationText": {
+            "type": "object",
+            "required": ["kind", "text"],
+            "additionalProperties": False,
+            "properties": {
+                "kind": {"type": "string", "const": "text"},
+                "text": {"type": "string", "minLength": 1},
+                "depth": {"type": "number"},
+                "top": {"type": "number"},
+                "base": {"type": "number"},
+                "lane_start": {"type": "number", "minimum": 0, "maximum": 1},
+                "lane_end": {"type": "number", "minimum": 0, "maximum": 1},
+                "color": {"type": "string", "minLength": 1},
+                "background_color": {"type": "string", "minLength": 1},
+                "border_color": {"type": "string", "minLength": 1},
+                "border_linewidth": {"type": "number", "exclusiveMinimum": 0},
+                "text_orientation": {
+                    "type": "string",
+                    "enum": ["horizontal", "vertical"],
+                },
+                "wrap": {"type": "boolean"},
+                "horizontal_alignment": {
+                    "type": "string",
+                    "enum": ["left", "center", "right"],
+                },
+                "vertical_alignment": {
+                    "type": "string",
+                    "enum": ["top", "center", "bottom"],
+                },
+                "font_size": {"type": "number", "exclusiveMinimum": 0},
+                "font_weight": {"type": "string", "minLength": 1},
+                "font_style": {"type": "string", "minLength": 1},
+                "padding": {"type": "number", "minimum": 0},
+            },
+            "allOf": [
+                {
+                    "oneOf": [
+                        {"required": ["depth"]},
+                        {"required": ["top", "base"]},
+                    ]
+                }
+            ],
         },
         "curveWrap": {
             "anyOf": [

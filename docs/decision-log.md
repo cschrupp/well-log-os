@@ -1,6 +1,6 @@
 # well_log_os Decision Log
 
-Last updated: 2026-03-14
+Last updated: 2026-03-15
 
 ## Purpose
 
@@ -52,6 +52,9 @@ This file records project decisions that should remain stable unless explicitly 
   `ticks`), not accidental reuse of generic x-axis behavior.
 - Reference-track local events are track-owned layout objects under `reference.events`, not channel
   bindings and not global document markers.
+- Annotation tracks own typed layout objects (`interval`, `text`) instead of channel bindings.
+- Annotation-track annotations may occupy normalized sub-lanes inside the track through
+  `lane_start` / `lane_end`.
 
 ## Rendering Decisions
 
@@ -76,6 +79,10 @@ This file records project decisions that should remain stable unless explicitly 
   properties when legends are enabled.
 - Curve-header label wrapping is opt-in per curve through `header_display.wrap_name`; the default
   remains truncation to keep existing header layouts stable.
+- Annotation tracks reuse the generic per-track grid system; grid suppression is configured through
+  the same `tracks[*].grid.horizontal` / `tracks[*].grid.vertical` blocks used elsewhere.
+- The first annotation-track rendering pass supports bounded interval blocks and free-form text
+  boxes; marker/glyph-style annotation objects remain a later addition.
 
 ## Tooling and Process Decisions
 

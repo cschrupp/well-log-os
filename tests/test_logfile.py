@@ -17,6 +17,8 @@ from well_log_os.logfile import (
     logfile_from_mapping,
 )
 from well_log_os.model import (
+    AnnotationIntervalSpec,
+    AnnotationTextSpec,
     CurveFillKind,
     GridScaleKind,
     RasterChannel,
@@ -943,6 +945,50 @@ class LogFileTests(unittest.TestCase):
         )
         curve = document.tracks[0].elements[0]
         self.assertTrue(curve.header_display.wrap_name)
+
+    def test_layout_can_parse_annotation_track_objects(self) -> None:
+        payload = build_mapping()
+        payload["document"]["layout"]["log_sections"][0]["tracks"].append(
+            {
+                "id": "lith",
+                "title": "Lithofacies",
+                "kind": "annotation",
+                "width_mm": 18,
+                "position": 4,
+                "annotations": [
+                    {
+                        "kind": "interval",
+                        "top": 1000,
+                        "base": 1010,
+                        "text": "shale",
+                    },
+                    {
+                        "kind": "text",
+                        "depth": 1005,
+                        "text": "laminated",
+                    },
+                ],
+            }
+        )
+        spec = logfile_from_mapping(payload)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("example_input.las"),
+        )
+        track = document.tracks[3]
+        self.assertEqual(track.kind.value, "annotation")
+        self.assertEqual(len(track.annotations), 2)
+        self.assertIsInstance(track.annotations[0], AnnotationIntervalSpec)
+        self.assertIsInstance(track.annotations[1], AnnotationTextSpec)
+
+    def test_non_annotation_track_rejects_annotation_objects_in_logfile(self) -> None:
+        payload = build_mapping()
+        payload["document"]["layout"]["log_sections"][0]["tracks"][0]["annotations"] = [
+            {"kind": "text", "depth": 1000, "text": "bad"}
+        ]
+        with self.assertRaises(TemplateValidationError):
+            logfile_from_mapping(payload)
 
     def test_bindings_can_group_multiple_curves_in_one_track(self) -> None:
         payload = build_mapping()

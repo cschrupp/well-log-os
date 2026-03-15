@@ -4,6 +4,8 @@ import unittest
 
 from well_log_os.errors import TemplateValidationError
 from well_log_os.model import (
+    AnnotationIntervalSpec,
+    AnnotationTextSpec,
     CurveElement,
     CurveFillKind,
     GridDisplayMode,
@@ -650,6 +652,66 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(document.zones[0].label, "Zone 1")
         self.assertAlmostEqual(document.zones[0].top, 1005.0)
         self.assertAlmostEqual(document.zones[0].base, 1012.0)
+
+    def test_annotation_track_can_parse_interval_and_text_objects(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "annotation objects",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "tracks": [
+                    {
+                        "id": "lith",
+                        "title": "Lithofacies",
+                        "kind": "annotation",
+                        "width_mm": 20,
+                        "annotations": [
+                            {
+                                "kind": "interval",
+                                "top": 1000,
+                                "base": 1010,
+                                "text": "shale",
+                                "fill_color": "#2047a3",
+                                "text_orientation": "vertical",
+                            },
+                            {
+                                "kind": "text",
+                                "top": 1010,
+                                "base": 1015,
+                                "text": "Detailed zone description",
+                                "wrap": True,
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+        track = document.tracks[0]
+        self.assertEqual(track.kind, TrackKind.ANNOTATION)
+        self.assertEqual(len(track.annotations), 2)
+        self.assertIsInstance(track.annotations[0], AnnotationIntervalSpec)
+        self.assertEqual(track.annotations[0].text, "shale")
+        self.assertIsInstance(track.annotations[1], AnnotationTextSpec)
+        self.assertEqual(track.annotations[1].text, "Detailed zone description")
+
+    def test_non_annotation_track_rejects_annotation_objects(self) -> None:
+        with self.assertRaises(ValueError):
+            document_from_mapping(
+                {
+                    "name": "bad annotation placement",
+                    "page": {"size": "A4"},
+                    "depth": {"unit": "m", "scale": "1:200"},
+                    "tracks": [
+                        {
+                            "id": "gr",
+                            "title": "GR",
+                            "kind": "normal",
+                            "width_mm": 30,
+                            "annotations": [{"kind": "text", "depth": 1000, "text": "bad"}],
+                        }
+                    ],
+                }
+            )
 
     def test_invalid_markers_or_zones_raise_template_error(self) -> None:
         with self.assertRaises(TemplateValidationError):

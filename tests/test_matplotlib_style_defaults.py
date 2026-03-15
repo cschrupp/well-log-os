@@ -2065,6 +2065,67 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
             self.assertTrue(output.exists())
             self.assertEqual(result.page_count, 1)
 
+    def test_annotation_track_renders_interval_and_text_objects(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "annotation track",
+                "page": {"size": "A4", "continuous": True},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "depth_range": [1000.0, 1020.0],
+                "tracks": [
+                    {
+                        "id": "ann",
+                        "title": "Annotations",
+                        "kind": "annotation",
+                        "width_mm": 20,
+                        "annotations": [
+                            {
+                                "kind": "interval",
+                                "top": 1000,
+                                "base": 1010,
+                                "text": "shale",
+                                "fill_color": "#2047a3",
+                                "text_orientation": "vertical",
+                            },
+                            {
+                                "kind": "text",
+                                "top": 1010,
+                                "base": 1018,
+                                "text": "Detailed zone description",
+                                "background_color": "#fff6cc",
+                                "border_color": "#222222",
+                                "wrap": True,
+                                "lane_start": 0.08,
+                                "lane_end": 0.92,
+                            },
+                            {
+                                "kind": "text",
+                                "depth": 1019,
+                                "text": "note",
+                                "lane_start": 0.1,
+                                "lane_end": 0.9,
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+        dataset = WellDataset(name="annotation")
+        renderer = MatplotlibRenderer()
+        page_layout = renderer.layout_engine.layout(document, dataset)[0]
+        fig, ax = plt.subplots(figsize=(2.0, 6.0))
+        try:
+            renderer._draw_track(ax, document.tracks[0], document, dataset, page_layout)
+            patch_types = [type(patch).__name__ for patch in ax.patches]
+            text_values = [text.get_text() for text in ax.texts]
+        finally:
+            plt.close(fig)
+
+        self.assertIn("Rectangle", patch_types)
+        self.assertTrue(any("shale" in value for value in text_values))
+        self.assertTrue(any("Detailed" in value for value in text_values))
+        self.assertTrue(any("note" in value for value in text_values))
+
     def test_array_plot_sample_axis_is_suppressed_when_bottom_header_exists(self) -> None:
         document = document_from_mapping(
             {
