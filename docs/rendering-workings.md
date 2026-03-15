@@ -480,7 +480,8 @@ Current object types:
 
 `interval` objects are intended for lithofacies-style blocks, zonation strips, and other bounded
 display regions. `text` objects are intended for free-form notes, either at a single depth or over
-an interval.
+an interval. `marker`, `arrow`, and `glyph` objects cover event-style annotation content inside the
+same track.
 
 Supported interval fields:
 
@@ -506,6 +507,45 @@ Supported text fields:
 - `text_orientation`
 - `wrap`
 
+Supported marker fields:
+
+- `depth`
+- `x`
+- `shape`, `size`
+- `color`, `fill_color`, `edge_color`, `line_width`
+- `label`
+- `text_side`, `text_x`, `depth_offset`
+- `font_size`, `font_weight`, `font_style`
+- `arrow`, `arrow_style`, `arrow_linewidth`
+- `priority`
+- `label_mode` (`free`, `dedicated_lane`, `none`)
+- `label_lane_start`, `label_lane_end` when `label_mode: dedicated_lane`
+
+Supported arrow fields:
+
+- `start_depth`, `end_depth`
+- `start_x`, `end_x`
+- `color`, `line_width`, `line_style`, `arrow_style`
+- `label`, `label_x`, `label_depth`
+- `font_size`, `font_weight`, `font_style`
+- `text_rotation`
+- `priority`
+- `label_mode` (`free`, `dedicated_lane`, `none`)
+- `label_lane_start`, `label_lane_end` when `label_mode: dedicated_lane`
+
+Supported glyph fields:
+
+- `glyph`
+- `depth` or `top`/`base`
+- `lane_start`, `lane_end`
+- `color`
+- `background_color`
+- `border_color`, `border_linewidth`
+- `font_size`, `font_weight`, `font_style`
+- `horizontal_alignment`, `vertical_alignment`
+- `rotation`
+- `padding`
+
 Lane semantics:
 
 - `lane_start` / `lane_end` are normalized track fractions in `[0, 1]`
@@ -517,6 +557,16 @@ Grid behavior:
 - annotation tracks reuse the same `tracks[*].grid` configuration as other non-reference tracks
 - to suppress the background grid entirely, disable `horizontal.main`, `horizontal.secondary`,
   `vertical.main`, and `vertical.secondary`
+
+Label-lane behavior:
+
+- `marker` and `arrow` labels can use `label_mode: dedicated_lane` when a dense annotation track
+  should keep event labels out of facies blocks and note boxes
+- `label_lane_start` / `label_lane_end` reserve a horizontal fraction of the annotation track for
+  those dynamic labels
+- dedicated-lane labels wrap to lane width before placement
+- placement is still collision-aware; if the reserved lane is too narrow or too crowded, lower-value
+  labels may still be rejected
 
 Example:
 
@@ -561,8 +611,12 @@ Example:
 
 Current boundary:
 
-- annotation `marker`, `arrow`, and `glyph` objects are not implemented yet
-- collision management between annotation objects is still pending
+- `interval`, `text`, `marker`, `arrow`, and `glyph` objects are implemented
+- collision-aware placement currently applies to dynamic `marker`/`arrow` labels
+- fixed interval/text/glyph boxes are treated as obstacles rather than being automatically
+  repacked
+- dense annotation examples may still require explicit lane design rather than relying purely on
+  automatic placement
           label: Amplitude
           position: header
         sample_axis:

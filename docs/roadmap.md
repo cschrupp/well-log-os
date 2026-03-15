@@ -41,7 +41,8 @@ Decision history is tracked in `docs/decision-log.md`.
   - reference-track scalar overlay modes (`curve`, `indicator`, `ticks`)
   - reference-track-local event objects for non-channel markers
   - reference-track headers that keep the layout scale row while exposing overlay properties
-  - annotation-track `interval` and `text` rendering with lane-local spans and wrapped notes
+  - annotation-track `interval`, `text`, `marker`, `arrow`, and `glyph` rendering
+  - annotation-track dedicated label lanes and collision-aware label placement for marker/arrow labels
   - array-lane raster controls (`colorbar`, `sample_axis`, waveform overlay)
   - waveform-only array rendering profile
   - VDL density rendering with grayscale amplitude mapping
@@ -77,7 +78,7 @@ Compared against `workspace/renders/CBL_log_example.Pdf`, the current renderer i
 
 - Cover/disclaimer/contents pages and report-style front matter.
 - Parameter-table sections (channel processing, depth zone, tool control).
-- Annotation event glyphs, richer non-curve callout lanes, and collision-aware annotation layout.
+- Advanced annotation packing for very dense tracks beyond the current dedicated-label-lane model.
 - Composite lane logic with custom legend/table blocks.
 - Multi-page report composition mode (in addition to continuous strip mode).
 - Richer visual theming and table/border styles for commercial-style output.
@@ -111,7 +112,6 @@ Implementable now (already in project):
 Near-term additions (next phases):
 
 - Points/symbol mode (`marker` type, size, optional color-by-variable).
-- Annotation-track marker/arrow/glyph objects and collision-aware placement.
 - Vertical thresholds and advanced repeat/wrap controls (count, offset, style).
 - Per-curve decimation/display optimization policy.
 - Per-curve number formatting for header limits (separate from label mode).
@@ -171,10 +171,10 @@ Longer-term / UI-centric:
 - Improve reference-track local event handling:
   - optional collision-aware placement for event labels versus curve callouts
   - optional header summaries for local reference events
-- Implement first `annotation` track objects:
-  - depth-linked text labels
-  - arrows/glyph markers
-  - reserved-space/no-overlap policies
+- Polish annotation-track examples and contracts:
+  - clearer dedicated-lane examples for dense lithofacies/event tracks
+  - optional multi-lane event-label examples
+  - collision-aware placement notes in the schema reference
 - Extend multi-section composition engine:
   - render heading/comments/tail blocks between log sections
   - add section-specific break policies for continuous and paginated outputs
@@ -207,7 +207,9 @@ Longer-term / UI-centric:
   - mixed reference + array + normal layout
 - Add image-track template examples for CBL/VDL with curve overlays.
 - Introduce report-section primitives (cover, disclaimer, contents, parameter tables).
-- Add annotation-track primitives beyond curve-owned callouts/arrows and depth-linked labels.
+- Add annotation-track polish beyond the current object baseline:
+  - richer label-lane contracts
+  - optional repacking rules for dense interval/text/glyph compositions
 - Add a paginated report mode for mixed pages + log strips.
 - Add style tokens/themes for branded tables, headers, and borders.
 - Add a schema reference page for YAML keys (especially `track_header.objects`).

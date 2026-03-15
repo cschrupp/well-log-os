@@ -52,7 +52,8 @@ This file records project decisions that should remain stable unless explicitly 
   `ticks`), not accidental reuse of generic x-axis behavior.
 - Reference-track local events are track-owned layout objects under `reference.events`, not channel
   bindings and not global document markers.
-- Annotation tracks own typed layout objects (`interval`, `text`) instead of channel bindings.
+- Annotation tracks own typed layout objects (`interval`, `text`, `marker`, `arrow`, `glyph`)
+  instead of channel bindings.
 - Annotation-track annotations may occupy normalized sub-lanes inside the track through
   `lane_start` / `lane_end`.
 
@@ -81,8 +82,11 @@ This file records project decisions that should remain stable unless explicitly 
   remains truncation to keep existing header layouts stable.
 - Annotation tracks reuse the generic per-track grid system; grid suppression is configured through
   the same `tracks[*].grid.horizontal` / `tracks[*].grid.vertical` blocks used elsewhere.
-- The first annotation-track rendering pass supports bounded interval blocks and free-form text
-  boxes; marker/glyph-style annotation objects remain a later addition.
+- Annotation tracks support bounded interval blocks, free-form text boxes, marker symbols, arrow
+  objects, and glyph objects.
+- Dense annotation tracks may reserve dedicated event-label sub-lanes through
+  `label_mode: dedicated_lane` plus `label_lane_start` / `label_lane_end` instead of relying only
+  on free-placement heuristics.
 
 ## Tooling and Process Decisions
 

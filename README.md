@@ -23,7 +23,8 @@ This repository currently contains the current MVP baseline:
 - in-track curve callouts with section-relative repetition and collision avoidance
 - reference-track scalar overlay modes (`curve`, `indicator`, `ticks`)
 - reference-track event objects for local markers such as casing foot or readings start
-- annotation tracks with typed `interval` and `text` objects for zone blocks and descriptive notes
+- annotation tracks with typed `interval`, `text`, `marker`, `arrow`, and `glyph` objects
+- dedicated annotation label lanes for dense tracks
 
 ## Architecture
 
@@ -37,8 +38,9 @@ Track types are explicit: `reference`, `normal`, `array`, and `annotation`
 Array tracks can host raster data and scalar overlays, while normal/reference tracks do not accept raster elements.
 Reference tracks can host scalar overlay curves and local reference events while still defining the
 layout axis.
-Annotation tracks host lane-local interval and text objects instead of channel bindings, and reuse
-the standard per-track `grid` configuration when you want the background grid on or off.
+Annotation tracks host lane-local interval, text, marker, arrow, and glyph objects instead of
+channel bindings, and reuse the standard per-track `grid` configuration when you want the
+background grid on or off.
 Set `page.continuous: true` in templates to render a single continuous-depth PDF page.
 Set `page.track_header_height_mm` to reserve a dedicated per-track header band.
 Track headers now support explicit object slots (`title`, `scale`, `legend`) with `enabled`,
@@ -104,6 +106,7 @@ For fill and callout examples, see:
 For annotation-track examples, see:
 - [examples/annotation_track_showcase.log.yaml](examples/annotation_track_showcase.log.yaml)
 - [examples/annotation_track_showcase_no_grid.log.yaml](examples/annotation_track_showcase_no_grid.log.yaml)
+- [examples/annotation_track_objects_showcase.log.yaml](examples/annotation_track_objects_showcase.log.yaml)
 
 ## Template + Savefile Model
 
@@ -163,6 +166,16 @@ Behavior:
   headers such as reference-track overlay legends.
 - Reference tracks support local event objects under `reference.events` for one-off markers such as
   casing shoe, readings start, or tool-state transitions.
+- Annotation tracks support first-class typed objects under `tracks[*].annotations`:
+  - `interval` for facies/zone blocks
+  - `text` for descriptive notes at a depth or over an interval
+  - `marker` for symbol-based point events
+  - `arrow` for explicit leader/indicator geometry
+  - `glyph` for compact symbols or short codes
+- Annotation `marker` and `arrow` labels support:
+  - `priority` for dense-track placement order
+  - `label_mode: free | dedicated_lane | none`
+  - `label_lane_start` / `label_lane_end` when the label must live in a reserved sub-lane
 - Callout repetition is section-relative. `top`, `bottom`, and `top_and_bottom` generate repeated
   depths from the log section bounds, then render each label inline at those generated depths.
 - Raster bindings support display controls:
