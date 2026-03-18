@@ -21,6 +21,8 @@ This file records project decisions that should remain stable unless explicitly 
   - `LogDocument` for layout and visualization specs
   - renderer backends for output generation
 - Templates are YAML-driven and define page geometry, depth behavior, tracks, and annotations.
+- The next public API phase should keep YAML as serialization while promoting the in-memory model
+  to the canonical authoring surface for Python users.
 
 ## Data Model Decisions
 
@@ -65,6 +67,16 @@ This file records project decisions that should remain stable unless explicitly 
   - one selected detail kind per report (`open_hole` or `cased_hole`)
   - empty cells stay empty and rows do not collapse
   - row-local splits are expressed with `label_cells` and `columns[].cells`
+- Programmatic ingestion of computed data should target validated internal channel objects, not raw
+  YAML-shaped dicts:
+  - scalar results enter as typed scalar channels with explicit index and units
+  - array/raster results enter as typed array channels with explicit index, sample axis, and units
+  - shared index alignment is not assumed; each channel must carry its own valid basis
+- The public Python API should be split into four areas:
+  - dataset ingestion
+  - document building
+  - rendering
+  - serialization
 
 ## Rendering Decisions
 

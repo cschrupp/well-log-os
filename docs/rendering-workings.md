@@ -68,6 +68,30 @@ Current report-section behavior:
 - `remarks` is intended for disclaimers, acquisition notes, summary remarks, or similar text that
   should appear before the log body.
 
+## 2a) Planned Programmatic API Boundary
+
+The next API phase keeps the same core layering but exposes it directly in Python:
+
+- data layer: `WellDataset` plus typed channels
+- composition layer: `LogDocument`
+- render layer: backend-specific rendering
+
+Planned implications:
+
+- YAML remains serialization, not the only authoring path
+- programmatic builders will create the same `LogDocument` objects the YAML pipeline creates today
+- dataset-ingestion helpers will convert numpy/pandas results into validated channel objects
+- partial render helpers will operate on filtered views of the same document model
+
+Planned public modules:
+
+- `well_log_os.api.dataset`
+- `well_log_os.api.builder`
+- `well_log_os.api.render`
+- `well_log_os.api.serialize`
+
+See [programmatic-api-plan.md](programmatic-api-plan.md) for the concrete implementation checklist.
+
 ## 3) Matplotlib Style Sections
 
 `render.matplotlib.style` supports these top-level sections:

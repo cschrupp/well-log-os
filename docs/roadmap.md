@@ -1,6 +1,6 @@
 # well_log_os Roadmap
 
-Last updated: 2026-03-15
+Last updated: 2026-03-18
 
 ## Scope Summary
 
@@ -71,6 +71,40 @@ Needed next to complete the intended workflow:
 - Add track-level default element properties to reduce binding repetition (style/scale/header display).
 - Add validation for unbound required tracks and optional strict mode for empty tracks.
 - Add CLI/report diagnostics that summarize section coverage and binding coverage.
+
+## Next Phase: Programmatic API and Dataset Ingestion (2026-03-18)
+
+This is now the active next phase after the current report/track MVP baseline.
+
+Core goals:
+
+- allow researchers to add computed channels from numpy/pandas back into `WellDataset`
+- allow logs to be composed in Python without hand-authoring YAML
+- support full and partial renders for notebook workflows
+- keep YAML as serialization, not the only authoring surface
+
+Planned public modules:
+
+- `well_log_os.api.dataset`
+- `well_log_os.api.builder`
+- `well_log_os.api.render`
+- `well_log_os.api.serialize`
+
+Planned delivery order:
+
+1. dataset-ingestion API
+2. pandas/numpy adapters
+3. validation and alignment helpers
+4. programmatic document builder
+5. in-memory dataset-backed sections
+6. full render API
+7. partial render API
+8. notebook-friendly outputs
+9. examples and tests
+
+Detailed checklist:
+
+- [docs/programmatic-api-plan.md](programmatic-api-plan.md)
 
 ## CBL Parity Gaps (from comparison test, 2026-03-09)
 
@@ -165,6 +199,13 @@ Longer-term / UI-centric:
 
 ## Immediate Next Tasks
 
+- Begin the programmatic API phase:
+  - dataset-ingestion API for computed channels
+  - pandas/numpy adapters
+  - programmatic document builder
+  - partial render API for section/track/window scopes
+  - notebook-friendly output helpers
+  - YAML round-trip support for builder-created documents
 - Document and expand reference/depth track usage:
   - reference-track overlay YAML examples
   - full-length reference overlay example

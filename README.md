@@ -33,6 +33,10 @@ The package separates three layers:
 - `LogDocument`: page, depth, track, and annotation specifications
 - renderers: backend-specific drawing implementations that consume the same document
 
+The next development phase adds two public API surfaces on top of those layers:
+- dataset ingestion for computed numpy/pandas results
+- programmatic composition/rendering so users can build logs without hand-authoring YAML
+
 Track types are explicit: `reference`, `normal`, `array`, and `annotation`
 (with compatibility aliases `depth`, `curve`, `image`).
 Array tracks can host raster data and scalar overlays, while normal/reference tracks do not accept raster elements.
@@ -85,6 +89,30 @@ uv run ruff format .
 uv run ruff check .
 ```
 
+## Planned Programmatic API
+
+The next milestone is a programmatic API aimed at research and notebook workflows.
+
+Planned capabilities:
+- ingest computed scalar and array channels from numpy/pandas into `WellDataset`
+- build `LogDocument` objects directly in Python
+- render full reports or partial scopes such as one section, one track, or one depth/time window
+- emit notebook-friendly outputs such as PNG bytes
+- serialize programmatically built documents back to YAML
+
+The guiding rule is:
+- YAML remains a first-class saved format
+- the in-memory model becomes the canonical authoring surface
+
+Planned public modules:
+- `well_log_os.api.dataset`
+- `well_log_os.api.builder`
+- `well_log_os.api.render`
+- `well_log_os.api.serialize`
+
+The full implementation checklist lives in
+[docs/programmatic-api-plan.md](docs/programmatic-api-plan.md).
+
 ## Example Template
 
 See [examples/triple_combo.yaml](examples/triple_combo.yaml).
@@ -107,6 +135,9 @@ For annotation-track examples, see:
 - [examples/annotation_track_showcase.log.yaml](examples/annotation_track_showcase.log.yaml)
 - [examples/annotation_track_showcase_no_grid.log.yaml](examples/annotation_track_showcase_no_grid.log.yaml)
 - [examples/annotation_track_objects_showcase.log.yaml](examples/annotation_track_objects_showcase.log.yaml)
+For a coherent end-to-end cased-hole packet using heading, remarks, main/repeat sections, reference
+overlays, thresholded CBL QC, VDL, and restrained interval annotations, see:
+- [examples/cbl_job_demo.log.yaml](examples/cbl_job_demo.log.yaml)
 
 ## Template + Savefile Model
 
@@ -518,6 +549,8 @@ vendor-generated logs.
 - [docs/decision-log.md](docs/decision-log.md): agreed architectural and product decisions.
 - [docs/roadmap.md](docs/roadmap.md): phased development plan and near-term priorities.
 - [docs/rendering-workings.md](docs/rendering-workings.md): rendering flow and style-resolution model.
+- [docs/programmatic-api-plan.md](docs/programmatic-api-plan.md): concrete checklist for dataset
+  ingestion, programmatic composition, partial renders, and notebook outputs.
 
 ## License
 
