@@ -1100,6 +1100,83 @@ def _resolve_text_tokens(document: dict[str, Any], dataset: WellDataset, source_
             value = header.get(key)
             if isinstance(value, str):
                 header[key] = _safe_format(value, tokens)
+        report = header.get("report")
+        if isinstance(report, dict):
+            provider_name = report.get("provider_name")
+            if isinstance(provider_name, str):
+                report["provider_name"] = _safe_format(provider_name, tokens)
+            general_fields = report.get("general_fields")
+            if isinstance(general_fields, list):
+                for field in general_fields:
+                    if not isinstance(field, dict):
+                        continue
+                    label = field.get("label")
+                    if isinstance(label, str):
+                        field["label"] = _safe_format(label, tokens)
+                    if isinstance(field.get("value"), str):
+                        field["value"] = _safe_format(field["value"], tokens)
+                    value = field.get("value")
+                    if isinstance(value, dict):
+                        if isinstance(value.get("value"), str):
+                            value["value"] = _safe_format(value["value"], tokens)
+                        if isinstance(value.get("default"), str):
+                            value["default"] = _safe_format(value["default"], tokens)
+                    if isinstance(field.get("default"), str):
+                        field["default"] = _safe_format(field["default"], tokens)
+            service_titles = report.get("service_titles")
+            if isinstance(service_titles, list):
+                for index, item in enumerate(service_titles):
+                    if isinstance(item, str):
+                        service_titles[index] = _safe_format(item, tokens)
+                    elif isinstance(item, dict):
+                        if isinstance(item.get("value"), str):
+                            item["value"] = _safe_format(item["value"], tokens)
+                        if isinstance(item.get("default"), str):
+                            item["default"] = _safe_format(item["default"], tokens)
+            detail = report.get("detail")
+            if isinstance(detail, dict):
+                if isinstance(detail.get("title"), str):
+                    detail["title"] = _safe_format(detail["title"], tokens)
+                column_titles = detail.get("column_titles")
+                if isinstance(column_titles, list):
+                    detail["column_titles"] = [
+                        _safe_format(item, tokens) if isinstance(item, str) else item
+                        for item in column_titles
+                    ]
+                rows = detail.get("rows")
+                if isinstance(rows, list):
+                    def _format_report_cell(item: Any) -> Any:
+                        if isinstance(item, str):
+                            return _safe_format(item, tokens)
+                        if isinstance(item, dict):
+                            if isinstance(item.get("value"), str):
+                                item["value"] = _safe_format(item["value"], tokens)
+                            if isinstance(item.get("default"), str):
+                                item["default"] = _safe_format(item["default"], tokens)
+                        return item
+
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        if isinstance(row.get("label"), str):
+                            row["label"] = _safe_format(row["label"], tokens)
+                        label_cells = row.get("label_cells")
+                        if isinstance(label_cells, list):
+                            for index, item in enumerate(label_cells):
+                                label_cells[index] = _format_report_cell(item)
+                        values = row.get("values")
+                        if isinstance(values, list):
+                            for index, item in enumerate(values):
+                                values[index] = _format_report_cell(item)
+                        columns = row.get("columns")
+                        if isinstance(columns, list):
+                            for column in columns:
+                                if not isinstance(column, dict):
+                                    continue
+                                cells = column.get("cells")
+                                if isinstance(cells, list):
+                                    for index, item in enumerate(cells):
+                                        cells[index] = _format_report_cell(item)
     footer = document.get("footer")
     if isinstance(footer, dict):
         lines = footer.get("lines")
@@ -1695,6 +1772,8 @@ def _apply_layout_section_placeholders(document: dict[str, Any]) -> None:
     heading = layout.get("heading")
     if isinstance(heading, dict):
         header = dict(_ensure_mapping(document.get("header", {}), context="document.header"))
+        if "report" not in header:
+            header["report"] = deepcopy(heading)
         for key in ("title", "subtitle", "fields"):
             if key in heading and key not in header:
                 header[key] = deepcopy(heading[key])
@@ -1702,6 +1781,14 @@ def _apply_layout_section_placeholders(document: dict[str, Any]) -> None:
 
     tail = layout.get("tail")
     if isinstance(tail, dict):
+        header = dict(_ensure_mapping(document.get("header", {}), context="document.header"))
+        report_raw = header.get("report", {})
+        if isinstance(report_raw, dict):
+            report = dict(report_raw)
+            if tail.get("enabled") is not None:
+                report["tail_enabled"] = bool(tail.get("enabled"))
+            header["report"] = report
+            document["header"] = header
         footer = dict(_ensure_mapping(document.get("footer", {}), context="document.footer"))
         if "lines" in tail and "lines" not in footer:
             footer["lines"] = deepcopy(tail["lines"])

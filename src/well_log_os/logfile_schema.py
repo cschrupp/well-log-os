@@ -102,6 +102,7 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
             "properties": {
                 "title": {"type": "string"},
                 "subtitle": {"type": "string"},
+                "report": {"$ref": "#/$defs/reportBlock"},
                 "fields": {
                     "type": "array",
                     "items": {
@@ -162,18 +163,152 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
             "required": ["log_sections"],
             "additionalProperties": False,
             "properties": {
-                "heading": {"type": "object"},
+                "heading": {"$ref": "#/$defs/reportBlock"},
                 "comments": {
                     "type": "array",
                     "items": {"type": "object"},
                 },
-                "tail": {"type": "object"},
+                "tail": {"$ref": "#/$defs/reportTail"},
                 "log_sections": {
                     "type": "array",
                     "minItems": 1,
                     "items": {"$ref": "#/$defs/layoutLogSection"},
                 },
             },
+        },
+        "reportValue": {
+            "anyOf": [
+                {"type": "string"},
+                {"type": "number"},
+                {
+                    "type": "object",
+                    "properties": {
+                        "value": {"type": ["string", "number"]},
+                        "source_key": {"type": "string", "minLength": 1},
+                        "default": {"type": ["string", "number"]},
+                    },
+                    "additionalProperties": False,
+                },
+            ]
+        },
+        "reportField": {
+            "type": "object",
+            "required": ["key", "label"],
+            "properties": {
+                "key": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "value": {"$ref": "#/$defs/reportValue"},
+                "source_key": {"type": "string", "minLength": 1},
+                "default": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        "reportDetailRow": {
+            "type": "object",
+            "properties": {
+                "label": {"type": "string", "minLength": 1},
+                "label_cells": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": {"$ref": "#/$defs/reportDetailCell"},
+                },
+                "values": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": {"$ref": "#/$defs/reportDetailCell"},
+                },
+                "columns": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": {"$ref": "#/$defs/reportDetailColumn"},
+                },
+            },
+            "allOf": [
+                {"anyOf": [{"required": ["label"]}, {"required": ["label_cells"]}]},
+                {"anyOf": [{"required": ["values"]}, {"required": ["columns"]}]},
+            ],
+            "additionalProperties": False,
+        },
+        "reportDetailCell": {
+            "anyOf": [
+                {"type": "string"},
+                {"type": "number"},
+                {
+                    "type": "object",
+                    "properties": {
+                        "value": {"type": ["string", "number"]},
+                        "source_key": {"type": "string", "minLength": 1},
+                        "default": {"type": ["string", "number"]},
+                        "background_color": {"type": "string", "minLength": 1},
+                        "text_color": {"type": "string", "minLength": 1},
+                        "font_weight": {"type": "string", "enum": ["normal", "bold"]},
+                        "divider_left_visible": {"type": "boolean"},
+                        "divider_right_visible": {"type": "boolean"},
+                    },
+                    "additionalProperties": False,
+                },
+            ]
+        },
+        "reportDetailColumn": {
+            "type": "object",
+            "required": ["cells"],
+            "properties": {
+                "cells": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": {"$ref": "#/$defs/reportDetailCell"},
+                }
+            },
+            "additionalProperties": False,
+        },
+        "reportDetail": {
+            "type": "object",
+            "required": ["kind", "rows"],
+            "properties": {
+                "kind": {"type": "string", "enum": ["open_hole", "cased_hole"]},
+                "title": {"type": "string", "minLength": 1},
+                "column_titles": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": {"type": "string"},
+                },
+                "rows": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"$ref": "#/$defs/reportDetailRow"},
+                },
+            },
+            "additionalProperties": False,
+        },
+        "reportBlock": {
+            "type": "object",
+            "properties": {
+                "enabled": {"type": "boolean"},
+                "provider_name": {"type": "string", "minLength": 1},
+                "general_fields": {
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/reportField"},
+                },
+                "service_titles": {
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/reportValue"},
+                },
+                "detail": {"$ref": "#/$defs/reportDetail"},
+                "tail_enabled": {"type": "boolean"},
+            },
+            "additionalProperties": False,
+        },
+        "reportTail": {
+            "type": "object",
+            "properties": {
+                "enabled": {"type": "boolean"},
+            },
+            "additionalProperties": False,
         },
         "layoutLogSection": {
             "type": "object",
@@ -301,6 +436,7 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
             "properties": {
                 "header": {"$ref": "#/$defs/matplotlibStyleHeader"},
                 "footer": {"$ref": "#/$defs/matplotlibStyleFooter"},
+                "report": {"$ref": "#/$defs/matplotlibStyleReport"},
                 "section_title": {"$ref": "#/$defs/matplotlibStyleSectionTitle"},
                 "track_header": {"$ref": "#/$defs/matplotlibStyleTrackHeader"},
                 "track": {"$ref": "#/$defs/matplotlibStyleTrack"},
@@ -354,6 +490,38 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 "page_x": {"type": "number"},
                 "page_y": {"type": "number"},
                 "page_fontsize": {"type": "number", "exclusiveMinimum": 0},
+            },
+        },
+        "matplotlibStyleReport": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "background_color": {"type": "string", "minLength": 1},
+                "border_color": {"type": "string", "minLength": 1},
+                "border_linewidth": {"type": "number", "exclusiveMinimum": 0},
+                "heading_frame_x": {"type": "number", "minimum": 0, "maximum": 1},
+                "heading_frame_y": {"type": "number", "minimum": 0, "maximum": 1},
+                "heading_frame_width": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+                "heading_frame_height": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+                "tail_frame_x": {"type": "number", "minimum": 0, "maximum": 1},
+                "tail_frame_y": {"type": "number", "minimum": 0, "maximum": 1},
+                "tail_frame_width": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+                "tail_frame_height": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+                "summary_band_color": {"type": "string", "minLength": 1},
+                "summary_text_color": {"type": "string", "minLength": 1},
+                "summary_label_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "summary_value_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "provider_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "title_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "service_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "field_label_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "field_value_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "detail_header_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "detail_label_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "detail_value_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "tail_service_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "tail_label_fontsize": {"type": "number", "exclusiveMinimum": 0},
+                "tail_value_fontsize": {"type": "number", "exclusiveMinimum": 0},
             },
         },
         "matplotlibStyleTrackHeader": {

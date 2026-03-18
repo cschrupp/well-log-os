@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import textwrap
 from copy import deepcopy
 from dataclasses import dataclass, replace
@@ -40,6 +41,10 @@ from ..model import (
     ReferenceCurveTickSide,
     ReferenceEventSpec,
     ReferenceTrackSpec,
+    ReportBlockSpec,
+    ReportDetailCellSpec,
+    ReportDetailSpec,
+    ReportValueSpec,
     ScalarChannel,
     ScaleKind,
     TrackHeaderObjectKind,
@@ -662,6 +667,41 @@ class MatplotlibRenderer(Renderer):
             if output is not None and output.suffix.lower() == ".pdf":
                 pdf = PdfPages(output)
             try:
+                report_document = document_dataset_pairs[0][0] if document_dataset_pairs else None
+                report_dataset = document_dataset_pairs[0][1] if document_dataset_pairs else None
+                report_block = (
+                    report_document.header.report
+                    if report_document is not None and report_document.header.report is not None
+                    else None
+                )
+                if (
+                    report_document is not None
+                    and report_dataset is not None
+                    and report_block is not None
+                    and report_block.enabled
+                ):
+                    report_fig = plt.figure(
+                        figsize=self._report_page_size_inches(report_document.page),
+                        dpi=self.dpi,
+                    )
+                    self._draw_report_page(
+                        report_fig,
+                        report_block,
+                        report_dataset,
+                        compact=False,
+                        frame=(
+                            float(self.style["report"]["heading_frame_x"]),
+                            float(self.style["report"]["heading_frame_y"]),
+                            float(self.style["report"]["heading_frame_width"]),
+                            float(self.style["report"]["heading_frame_height"]),
+                        ),
+                    )
+                    if pdf is not None:
+                        pdf.savefig(report_fig, dpi=self.dpi)
+                        plt.close(report_fig)
+                    else:
+                        figures.append(report_fig)
+                    total_pages += 1
                 for source_document, section_dataset in document_dataset_pairs:
                     render_document = source_document
                     draw_header = True
@@ -765,6 +805,34 @@ class MatplotlibRenderer(Renderer):
                             figures.append(fig)
 
                     total_pages += len(layouts)
+                if (
+                    report_document is not None
+                    and report_dataset is not None
+                    and report_block is not None
+                    and report_block.tail_enabled
+                ):
+                    report_tail_fig = plt.figure(
+                        figsize=self._report_page_size_inches(report_document.page),
+                        dpi=self.dpi,
+                    )
+                    self._draw_report_page(
+                        report_tail_fig,
+                        report_block,
+                        report_dataset,
+                        compact=True,
+                        frame=(
+                            float(self.style["report"]["tail_frame_x"]),
+                            float(self.style["report"]["tail_frame_y"]),
+                            float(self.style["report"]["tail_frame_width"]),
+                            float(self.style["report"]["tail_frame_height"]),
+                        ),
+                    )
+                    if pdf is not None:
+                        pdf.savefig(report_tail_fig, dpi=self.dpi)
+                        plt.close(report_tail_fig)
+                    else:
+                        figures.append(report_tail_fig)
+                    total_pages += 1
             finally:
                 if pdf is not None:
                     pdf.close()
@@ -783,6 +851,1066 @@ class MatplotlibRenderer(Renderer):
         width = frame.width_mm / page.width_mm
         height = frame.height_mm / page.height_mm
         return [left, bottom, width, height]
+
+    def _report_page_size_inches(self, page) -> tuple[float, float]:
+        return float(page.width_mm) / 25.4, float(page.height_mm) / 25.4
+
+    def _report_page_transform(self, ax, *, rotated: bool):
+        if not rotated:
+            return ax.transAxes
+        from matplotlib.transforms import Affine2D
+
+        return Affine2D().rotate_deg(-90).translate(0.0, 1.0) + ax.transAxes
+
+    def _resolve_report_value(self, value: ReportValueSpec, dataset: WellDataset) -> str:
+        if value.source_key is not None:
+            fallback = value.value if value.value is not None else value.default
+            return str(dataset.header_value(value.source_key, fallback))
+        if value.value is not None:
+            return str(value.value)
+        return str(value.default)
+
+    def _report_summary_fields(
+        self,
+        report: ReportBlockSpec,
+        dataset: WellDataset,
+    ) -> list[tuple[str, str]]:
+        desired_keys = ("company", "well", "field", "county", "country")
+        fields_by_key = {field.key: field for field in report.general_fields}
+        resolved: list[tuple[str, str]] = []
+        for key in desired_keys:
+            field = fields_by_key.get(key)
+            if field is None:
+                continue
+            value = self._resolve_report_value(field.value, dataset).strip()
+            if not value:
+                continue
+            resolved.append((field.label, value))
+        return resolved
+
+    def _report_general_table_fields(
+        self,
+        report: ReportBlockSpec,
+        dataset: WellDataset,
+    ) -> list[tuple[str, str]]:
+        summary_keys = {"company", "well", "field", "county", "country"}
+        rows: list[tuple[str, str]] = []
+        for field in report.general_fields:
+            if field.key in summary_keys:
+                continue
+            value = self._resolve_report_value(field.value, dataset).strip()
+            rows.append((field.label, value))
+        return rows
+
+    def _report_service_titles(
+        self,
+        report: ReportBlockSpec,
+        dataset: WellDataset,
+    ) -> list[str]:
+        titles: list[str] = []
+        for item in report.service_titles:
+            value = self._resolve_report_value(item, dataset).strip()
+            if value:
+                titles.append(value)
+        return titles
+
+    def _report_field_map(
+        self,
+        report: ReportBlockSpec,
+        dataset: WellDataset,
+    ) -> dict[str, str]:
+        resolved: dict[str, str] = {}
+        for field in report.general_fields:
+            resolved[field.key] = self._resolve_report_value(field.value, dataset).strip()
+        return resolved
+
+    def _report_location_lines(self, value: str) -> tuple[str, str, str]:
+        text = value.strip()
+        if not text:
+            return ("", "", "")
+        match = re.search(
+            r"Lat:\s*([^,]+?)(?:\s+Long:|\s+Lon:|,)\s*(.+)$",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return (
+                f"Lat: {match.group(1).strip()}",
+                f"Long: {match.group(2).strip()}",
+                "",
+            )
+        return (text, "", "")
+
+    def _draw_report_outer_frame(self, ax, report_style: dict[str, Any]) -> None:
+        from matplotlib.patches import Rectangle
+
+        ax.add_patch(
+            Rectangle(
+                (0.0, 0.0),
+                1.0,
+                1.0,
+                facecolor=str(report_style["background_color"]),
+                edgecolor=str(report_style["border_color"]),
+                linewidth=float(report_style["border_linewidth"]),
+                transform=ax.transAxes,
+                zorder=0.1,
+            )
+        )
+
+    def _draw_report_cover_section(
+        self,
+        ax,
+        report: ReportBlockSpec,
+        dataset: WellDataset,
+        report_style: dict[str, Any],
+        *,
+        transform,
+        text_rotation: float,
+    ) -> None:
+        from matplotlib.patches import Rectangle
+
+        text_kwargs: dict[str, Any] = {"transform": transform}
+        if text_rotation:
+            text_kwargs["rotation"] = text_rotation
+            text_kwargs["rotation_mode"] = "anchor"
+
+        def draw_box(x: float, y: float, width: float, height: float) -> None:
+            ax.add_patch(
+                Rectangle(
+                    (x, y),
+                    width,
+                    height,
+                    facecolor="none",
+                    edgecolor=str(report_style["border_color"]),
+                    linewidth=float(report_style["border_linewidth"]),
+                    transform=transform,
+                    zorder=0.15,
+                )
+            )
+
+        def draw_subrows(
+            x: float,
+            y: float,
+            width: float,
+            height: float,
+            rows: list[tuple[str, str]],
+            *,
+            label_ratio: float = 0.30,
+            line_only_value: bool = True,
+        ) -> None:
+            if not rows:
+                return
+            row_h = height / len(rows)
+            label_x = x + 0.012
+            value_x = x + width * label_ratio
+            for idx, (label, value) in enumerate(rows):
+                row_top = y + height - idx * row_h
+                row_center = row_top - 0.5 * row_h
+                if idx:
+                    ax.plot(
+                        [x, x + width],
+                        [row_top, row_top],
+                        transform=transform,
+                        color="#6b6b6b",
+                        lw=0.35,
+                    )
+                ax.text(
+                    label_x,
+                    row_center,
+                    f"{label}:",
+                    ha="left",
+                    va="center",
+                    fontsize=float(report_style["field_label_fontsize"]),
+                    color="#111111",
+                    **text_kwargs,
+                )
+                if line_only_value and not value:
+                    ax.plot(
+                        [value_x, x + width - 0.012],
+                        [row_center, row_center],
+                        transform=transform,
+                        color="#444444",
+                        lw=0.45,
+                    )
+                if value:
+                    ax.text(
+                        value_x + 0.004,
+                        row_center,
+                        value,
+                        ha="left",
+                        va="center",
+                        fontsize=float(report_style["field_value_fontsize"]),
+                        color="#111111",
+                        **text_kwargs,
+                    )
+
+        fields = self._report_field_map(report, dataset)
+        x0, y0, width, height = 0.02, 0.56, 0.96, 0.42
+        left_width = width * 0.28
+        right_width = width - left_width
+        row1_h = height * 0.34
+        row2_h = height * 0.18
+        row3_h = height * 0.23
+        row4_h = height - row1_h - row2_h - row3_h
+        top = y0 + height
+
+        logo_box = (x0, top - row1_h, left_width, row1_h)
+        titles_box = (x0 + left_width, top - row1_h, right_width, row1_h)
+        archive_box = (x0, top - row1_h - row2_h, left_width, row2_h)
+        identity_box = (x0 + left_width, top - row1_h - row2_h, right_width, row2_h)
+        scale_box = (x0, top - row1_h - row2_h - row3_h, left_width, row3_h)
+        coord_mid_width = right_width * 0.74
+        coords_box = (
+            x0 + left_width,
+            top - row1_h - row2_h - row3_h,
+            coord_mid_width,
+            row3_h,
+        )
+        services_box = (
+            x0 + left_width + coord_mid_width,
+            top - row1_h - row2_h - row3_h,
+            right_width - coord_mid_width,
+            row3_h,
+        )
+        footer_box = (x0, y0, width, row4_h)
+
+        for box in (
+            logo_box,
+            titles_box,
+            archive_box,
+            identity_box,
+            scale_box,
+            coords_box,
+            services_box,
+            footer_box,
+        ):
+            draw_box(*box)
+
+        provider_text = (report.provider_name or fields.get("company") or "Company").strip()
+        ax.text(
+            logo_box[0] + logo_box[2] * 0.5,
+            logo_box[1] + logo_box[3] * 0.5,
+            provider_text,
+            ha="center",
+            va="center",
+            fontsize=float(report_style["summary_value_fontsize"]),
+            fontweight="bold",
+            color="#222222",
+            **text_kwargs,
+        )
+        ax.text(
+            logo_box[0] + logo_box[2] * 0.5,
+            logo_box[1] + 0.08 * logo_box[3],
+            "Logo Placeholder",
+            ha="center",
+            va="bottom",
+            fontsize=max(5.0, float(report_style["field_label_fontsize"]) - 1.0),
+            color="#666666",
+            **text_kwargs,
+        )
+
+        service_titles = self._report_service_titles(report, dataset)
+        if service_titles:
+            title_x = titles_box[0] + 0.02
+            start_y = titles_box[1] + titles_box[3] - 0.08 * titles_box[3]
+            step = min(0.12 * titles_box[3], 0.28 * titles_box[3] / max(len(service_titles), 1))
+            for index, title in enumerate(service_titles):
+                ax.text(
+                    title_x,
+                    start_y - index * max(step, 0.055),
+                    title,
+                    ha="left",
+                    va="top",
+                    fontsize=float(report_style["service_fontsize"]),
+                    color="#111111",
+                    **text_kwargs,
+                )
+
+        draw_subrows(
+            *archive_box,
+            [
+                ("Archive No", fields.get("archive_no", "")),
+                ("API No", fields.get("api_no", "")),
+            ],
+            label_ratio=0.40,
+        )
+
+        draw_subrows(
+            *identity_box,
+            [
+                ("Company", fields.get("company", "")),
+                ("Well", fields.get("well", "")),
+                ("Field", fields.get("field", "")),
+                ("County", fields.get("county", fields.get("province", ""))),
+            ],
+            label_ratio=0.28,
+        )
+
+        ax.text(
+            scale_box[0] + 0.012,
+            scale_box[1] + scale_box[3] - 0.18 * scale_box[3],
+            f"Version: {fields.get('version', '')}".rstrip(),
+            ha="left",
+            va="top",
+            fontsize=float(report_style["field_value_fontsize"]),
+            color="#111111",
+            **text_kwargs,
+        )
+        ax.text(
+            scale_box[0] + 0.012,
+            scale_box[1] + 0.36 * scale_box[3],
+            "Scale:",
+            ha="left",
+            va="center",
+            fontsize=float(report_style["field_label_fontsize"]),
+            color="#111111",
+            **text_kwargs,
+        )
+        if fields.get("scale"):
+            ax.text(
+                scale_box[0] + 0.16,
+                scale_box[1] + 0.36 * scale_box[3],
+                fields["scale"],
+                ha="left",
+                va="center",
+                fontsize=float(report_style["field_value_fontsize"]),
+                color="#111111",
+                **text_kwargs,
+            )
+
+        lat_line, long_line, third_line = self._report_location_lines(fields.get("location", ""))
+        ax.text(
+            coords_box[0] + 0.012,
+            coords_box[1] + coords_box[3] - 0.12 * coords_box[3],
+            "Coordinates:",
+            ha="left",
+            va="top",
+            fontsize=float(report_style["field_label_fontsize"]),
+            color="#111111",
+            fontweight="bold",
+            **text_kwargs,
+        )
+        coord_lines = [line for line in (lat_line, long_line, third_line) if line]
+        if not coord_lines:
+            coord_lines = ["", "", ""]
+        for index, line in enumerate(coord_lines[:3]):
+            ax.text(
+                coords_box[0] + 0.012,
+                coords_box[1] + coords_box[3] - 0.38 * coords_box[3] - index * 0.22 * coords_box[3],
+                line,
+                ha="left",
+                va="top",
+                fontsize=float(report_style["field_value_fontsize"]),
+                color="#111111",
+                **text_kwargs,
+            )
+
+        ax.text(
+            services_box[0] + 0.012,
+            services_box[1] + services_box[3] - 0.12 * services_box[3],
+            "Services",
+            ha="left",
+            va="top",
+            fontsize=float(report_style["field_label_fontsize"]),
+            color="#111111",
+            fontweight="bold",
+            **text_kwargs,
+        )
+
+        left_footer_w = width * 0.28
+        mid_footer_w = width * 0.46
+        left_footer_x = footer_box[0]
+        mid_footer_x = left_footer_x + left_footer_w
+        right_footer_x = mid_footer_x + mid_footer_w
+        ax.plot(
+            [mid_footer_x, mid_footer_x],
+            [footer_box[1], footer_box[1] + footer_box[3]],
+            transform=transform,
+            color="#3d3d3d",
+            lw=0.45,
+        )
+        ax.plot(
+            [right_footer_x, right_footer_x],
+            [footer_box[1], footer_box[1] + footer_box[3]],
+            transform=transform,
+            color="#3d3d3d",
+            lw=0.45,
+        )
+        footer_rows = [
+            ("Measured From", fields.get("measured_from", "")),
+            ("Log Measured From", fields.get("log_measured_from", "")),
+            ("Perforation Measured From", fields.get("perforation_measured_from", "")),
+        ]
+        row_h = footer_box[3] / len(footer_rows)
+        for index, (label, value) in enumerate(footer_rows):
+            row_top = footer_box[1] + footer_box[3] - index * row_h
+            row_center = row_top - 0.5 * row_h
+            if index:
+                ax.plot(
+                    [footer_box[0], right_footer_x],
+                    [row_top, row_top],
+                    transform=transform,
+                    color="#6b6b6b",
+                    lw=0.35,
+                )
+            ax.text(
+                left_footer_x + 0.012,
+                row_center,
+                label,
+                ha="left",
+                va="center",
+                fontsize=float(report_style["field_label_fontsize"]),
+                color="#111111",
+                **text_kwargs,
+            )
+            if value:
+                ax.text(
+                    mid_footer_x + 0.012,
+                    row_center,
+                    value,
+                    ha="left",
+                    va="center",
+                    fontsize=float(report_style["field_value_fontsize"]),
+                    color="#111111",
+                    **text_kwargs,
+                )
+        altitude_rows = [
+            ("Altitudes", ""),
+            ("KB", fields.get("elevation_kb", "")),
+            ("GL", fields.get("elevation_gl", "")),
+            ("DF", fields.get("elevation_df", "")),
+        ]
+        altitude_row_h = footer_box[3] / len(altitude_rows)
+        for row_index in range(1, len(altitude_rows)):
+            divider_y = footer_box[1] + row_index * altitude_row_h
+            ax.plot(
+                [right_footer_x, footer_box[0] + footer_box[2]],
+                [divider_y, divider_y],
+                transform=transform,
+                color="#6b6b6b",
+                lw=0.35,
+            )
+        for row_index, (label, value) in enumerate(altitude_rows):
+            row_center_y = footer_box[1] + footer_box[3] - (row_index + 0.5) * altitude_row_h
+            if row_index == 0:
+                ax.text(
+                    right_footer_x + 0.012,
+                    row_center_y,
+                    label,
+                    ha="left",
+                    va="center",
+                    fontsize=float(report_style["field_label_fontsize"]),
+                    color="#111111",
+                    fontweight="bold",
+                    **text_kwargs,
+                )
+                continue
+            row_text = label if not value else f"{label}  {value}"
+            ax.text(
+                right_footer_x + 0.012,
+                row_center_y,
+                row_text,
+                ha="left",
+                va="center",
+                fontsize=float(report_style["field_value_fontsize"]),
+                color="#111111",
+                **text_kwargs,
+            )
+
+    def _draw_report_summary_band(
+        self,
+        ax,
+        report: ReportBlockSpec,
+        dataset: WellDataset,
+        report_style: dict[str, Any],
+        *,
+        compact: bool,
+        transform,
+        text_rotation: float,
+    ) -> None:
+        from matplotlib.patches import Rectangle
+
+        band_x = 0.0
+        band_y = 0.78 if not compact else 0.43
+        band_w = 1.0
+        band_h = 0.22 if not compact else 0.57
+        text_kwargs: dict[str, Any] = {"transform": transform}
+        if text_rotation:
+            text_kwargs["rotation"] = text_rotation
+            text_kwargs["rotation_mode"] = "anchor"
+        ax.add_patch(
+            Rectangle(
+                (band_x, band_y),
+                band_w,
+                band_h,
+                facecolor=str(report_style["summary_band_color"]),
+                edgecolor=str(report_style["border_color"]),
+                linewidth=float(report_style["border_linewidth"]),
+                transform=transform,
+                zorder=0.2,
+            )
+        )
+        if report.provider_name:
+            ax.text(
+                band_x + band_w - 0.02,
+                band_y + band_h - 0.06,
+                report.provider_name,
+                ha="right",
+                va="top",
+                fontsize=float(report_style["provider_fontsize"]),
+                color=str(report_style["summary_text_color"]),
+                fontweight="bold",
+                zorder=0.3,
+                **text_kwargs,
+            )
+        summary_rows = self._report_summary_fields(report, dataset)
+        if not summary_rows:
+            return
+        label_size = (
+            float(report_style["tail_label_fontsize"])
+            if compact
+            else float(report_style["summary_label_fontsize"])
+        )
+        value_size = (
+            float(report_style["tail_value_fontsize"])
+            if compact
+            else float(report_style["summary_value_fontsize"])
+        )
+        top = band_y + band_h - (0.15 if report.provider_name else 0.08)
+        step = min(0.12, max(0.055, (band_h - 0.16) / max(len(summary_rows), 1)))
+        label_x = band_x + 0.02
+        value_x = band_x + (0.16 if compact else 0.20)
+        for index, (label, value) in enumerate(summary_rows):
+            y = top - index * step
+            ax.text(
+                label_x,
+                y,
+                f"{label}:",
+                ha="left",
+                va="top",
+                fontsize=label_size,
+                color=str(report_style["summary_text_color"]),
+                zorder=0.3,
+                **text_kwargs,
+            )
+            ax.text(
+                value_x,
+                y,
+                value,
+                ha="left",
+                va="top",
+                fontsize=value_size,
+                color=str(report_style["summary_text_color"]),
+                fontweight="bold" if compact else "normal",
+                zorder=0.3,
+                **text_kwargs,
+            )
+
+    def _draw_report_tail_section(
+        self,
+        ax,
+        report: ReportBlockSpec,
+        dataset: WellDataset,
+        report_style: dict[str, Any],
+        *,
+        transform,
+        text_rotation: float,
+    ) -> None:
+        from matplotlib.patches import Rectangle
+
+        text_kwargs: dict[str, Any] = {"transform": transform}
+        if text_rotation:
+            text_kwargs["rotation"] = text_rotation
+            text_kwargs["rotation_mode"] = "anchor"
+
+        def draw_box(x: float, y: float, width: float, height: float) -> None:
+            ax.add_patch(
+                Rectangle(
+                    (x, y),
+                    width,
+                    height,
+                    facecolor="none",
+                    edgecolor=str(report_style["border_color"]),
+                    linewidth=float(report_style["border_linewidth"]),
+                    transform=transform,
+                    zorder=0.15,
+                )
+            )
+
+        fields = self._report_field_map(report, dataset)
+        x0, y0, width, height = 0.01, 0.08, 0.98, 0.84
+        draw_box(x0, y0, width, height)
+
+        logo_width = width * 0.21
+        summary_width = width * 0.44
+        detail_width = width - logo_width - summary_width
+
+        logo_box = (x0, y0, logo_width, height)
+        summary_box = (x0 + logo_width, y0, summary_width, height)
+        detail_box = (x0 + logo_width + summary_width, y0, detail_width, height)
+        services_height = detail_box[3] * 0.64
+        services_box = (
+            detail_box[0],
+            detail_box[1] + detail_box[3] - services_height,
+            detail_box[2],
+            services_height,
+        )
+        scale_box = (
+            detail_box[0],
+            detail_box[1],
+            detail_box[2],
+            detail_box[3] - services_height,
+        )
+
+        for box in (logo_box, summary_box, detail_box, services_box, scale_box):
+            draw_box(*box)
+
+        provider_text = (report.provider_name or fields.get("company") or "Company").strip()
+        ax.text(
+            logo_box[0] + logo_box[2] * 0.5,
+            logo_box[1] + logo_box[3] * 0.62,
+            provider_text,
+            ha="center",
+            va="center",
+            fontsize=float(report_style["summary_value_fontsize"]),
+            fontweight="bold",
+            color="#222222",
+            **text_kwargs,
+        )
+        ax.text(
+            logo_box[0] + logo_box[2] * 0.5,
+            logo_box[1] + logo_box[3] * 0.27,
+            "Logo Placeholder",
+            ha="center",
+            va="center",
+            fontsize=max(5.0, float(report_style["field_label_fontsize"]) - 1.0),
+            color="#666666",
+            **text_kwargs,
+        )
+
+        summary_rows = self._report_summary_fields(report, dataset)
+        row_h = summary_box[3] / max(len(summary_rows), 1)
+        for idx, (label, value) in enumerate(summary_rows):
+            row_top = summary_box[1] + summary_box[3] - idx * row_h
+            row_center = row_top - 0.5 * row_h
+            if idx:
+                ax.plot(
+                    [summary_box[0], summary_box[0] + summary_box[2]],
+                    [row_top, row_top],
+                    transform=transform,
+                    color="#6b6b6b",
+                    lw=0.35,
+                )
+            ax.text(
+                summary_box[0] + 0.012,
+                row_center,
+                f"{label}:",
+                ha="left",
+                va="center",
+                fontsize=float(report_style["field_label_fontsize"]),
+                color="#111111",
+                **text_kwargs,
+            )
+            ax.text(
+                summary_box[0] + 0.22,
+                row_center,
+                value,
+                ha="left",
+                va="center",
+                fontsize=float(report_style["field_value_fontsize"]),
+                color="#111111",
+                **text_kwargs,
+            )
+
+        ax.text(
+            services_box[0] + 0.012,
+            services_box[1] + services_box[3] - 0.14 * services_box[3],
+            "Services",
+            ha="left",
+            va="top",
+            fontsize=float(report_style["field_label_fontsize"]),
+            color="#111111",
+            fontweight="bold",
+            **text_kwargs,
+        )
+        service_titles = self._report_service_titles(report, dataset)
+        if service_titles:
+            start_y = services_box[1] + services_box[3] - 0.38 * services_box[3]
+            step = min(0.23 * services_box[3], 0.58 * services_box[3] / max(len(service_titles), 1))
+            for index, title in enumerate(service_titles):
+                ax.text(
+                    services_box[0] + 0.012,
+                    start_y - index * max(step, 0.055),
+                    title,
+                    ha="left",
+                    va="top",
+                    fontsize=float(report_style["service_fontsize"]),
+                    color="#111111",
+                    **text_kwargs,
+                )
+
+        ax.text(
+            scale_box[0] + 0.012,
+            scale_box[1] + scale_box[3] - 0.16 * scale_box[3],
+            "Scale",
+            ha="left",
+            va="top",
+            fontsize=float(report_style["field_label_fontsize"]),
+            color="#111111",
+            fontweight="bold",
+            **text_kwargs,
+        )
+        ax.text(
+            scale_box[0] + 0.012,
+            scale_box[1] + 0.32 * scale_box[3],
+            fields.get("scale", ""),
+            ha="left",
+            va="center",
+            fontsize=float(report_style["field_value_fontsize"]),
+            color="#111111",
+            **text_kwargs,
+        )
+
+    def _draw_report_general_fields(
+        self,
+        ax,
+        report: ReportBlockSpec,
+        dataset: WellDataset,
+        report_style: dict[str, Any],
+        *,
+        transform,
+        text_rotation: float,
+    ) -> None:
+        from matplotlib.patches import Rectangle
+
+        rows = self._report_general_table_fields(report, dataset)
+        if not rows:
+            return
+        x0, y0, width, height = 0.02, 0.61, 0.96, 0.13
+        text_kwargs: dict[str, Any] = {"transform": transform}
+        if text_rotation:
+            text_kwargs["rotation"] = text_rotation
+            text_kwargs["rotation_mode"] = "anchor"
+        ax.add_patch(
+            Rectangle(
+                (x0, y0),
+                width,
+                height,
+                facecolor="none",
+                edgecolor=str(report_style["border_color"]),
+                linewidth=float(report_style["border_linewidth"]),
+                transform=transform,
+                zorder=0.15,
+            )
+        )
+        columns = 2 if len(rows) > 6 else 1
+        rows_per_col = int(np.ceil(len(rows) / columns))
+        row_step = height / max(rows_per_col, 1)
+        for row_index in range(rows_per_col):
+            if row_index == 0:
+                continue
+            y = y0 + height - row_index * row_step
+            ax.plot([x0, x0 + width], [y, y], transform=transform, color="#4a4a4a", lw=0.35)
+        if columns == 2:
+            divider_x = x0 + width * 0.5
+            ax.plot(
+                [divider_x, divider_x],
+                [y0, y0 + height],
+                transform=transform,
+                color="#4a4a4a",
+                lw=0.45,
+            )
+        for index, (label, value) in enumerate(rows):
+            col = index // rows_per_col
+            row = index % rows_per_col
+            col_x = x0 + col * (width / columns)
+            y = y0 + height - (row + 0.5) * row_step
+            ax.text(
+                col_x + 0.012,
+                y,
+                f"{label}:",
+                ha="left",
+                va="center",
+                fontsize=float(report_style["field_label_fontsize"]),
+                color="#222222",
+                **text_kwargs,
+            )
+            ax.text(
+                col_x + (width / columns) * 0.42,
+                y,
+                value,
+                ha="left",
+                va="center",
+                fontsize=float(report_style["field_value_fontsize"]),
+                color="#111111",
+                **text_kwargs,
+            )
+
+    def _draw_report_service_titles(
+        self,
+        ax,
+        report: ReportBlockSpec,
+        dataset: WellDataset,
+        report_style: dict[str, Any],
+        *,
+        compact: bool,
+        transform,
+        text_rotation: float,
+    ) -> None:
+        titles = self._report_service_titles(report, dataset)
+        if not titles:
+            return
+        text_kwargs: dict[str, Any] = {"transform": transform}
+        if text_rotation:
+            text_kwargs["rotation"] = text_rotation
+            text_kwargs["rotation_mode"] = "anchor"
+        if compact:
+            start_y = 0.33
+            step = min(0.12, 0.26 / max(len(titles), 1))
+            fontsize = float(report_style["tail_service_fontsize"])
+            x = 0.02
+            for index, title in enumerate(titles):
+                ax.text(
+                    x,
+                    start_y - index * step,
+                    title,
+                    ha="left",
+                    va="top",
+                    fontsize=fontsize,
+                    color="#111111",
+                    **text_kwargs,
+                )
+            return
+        x = 0.12
+        start_y = 0.56
+        step = min(0.04, 0.10 / max(len(titles), 1))
+        for index, title in enumerate(titles):
+            ax.text(
+                x,
+                start_y - index * step,
+                title,
+                ha="left",
+                va="top",
+                fontsize=float(report_style["service_fontsize"]),
+                color="#111111",
+                **text_kwargs,
+            )
+
+    def _draw_report_detail_table(
+        self,
+        ax,
+        detail: ReportDetailSpec,
+        dataset: WellDataset,
+        report_style: dict[str, Any],
+        *,
+        transform,
+        text_rotation: float,
+    ) -> None:
+        from matplotlib.patches import Rectangle
+
+        x0, y0, width, height = 0.02, 0.02, 0.96, 0.50
+        text_kwargs: dict[str, Any] = {"transform": transform}
+        if text_rotation:
+            text_kwargs["rotation"] = text_rotation
+            text_kwargs["rotation_mode"] = "anchor"
+        ax.add_patch(
+            Rectangle(
+                (x0, y0),
+                width,
+                height,
+                facecolor="none",
+                edgecolor=str(report_style["border_color"]),
+                linewidth=float(report_style["border_linewidth"]),
+                transform=transform,
+                zorder=0.15,
+            )
+        )
+        title_height = 0.04
+        ax.text(
+            x0 + 0.01,
+            y0 + height - 0.015,
+            detail.title or "",
+            ha="left",
+            va="top",
+            fontsize=float(report_style["detail_header_fontsize"]),
+            fontweight="bold",
+            color="#111111",
+            **text_kwargs,
+        )
+        header_y = y0 + height - title_height - 0.03
+        ax.plot(
+            [x0, x0 + width],
+            [header_y, header_y],
+            transform=transform,
+            color="#3d3d3d",
+            lw=0.5,
+        )
+        label_w = 0.32 * width
+        value_w = width - label_w
+        col_count = (
+            len(detail.column_titles)
+            if detail.column_titles
+            else len(detail.rows[0].columns)
+        )
+        for col in range(col_count + 1):
+            x = x0 + label_w + (value_w / col_count) * col
+            ax.plot([x, x], [y0, y0 + height], transform=transform, color="#3d3d3d", lw=0.45)
+        ax.plot(
+            [x0 + label_w, x0 + label_w],
+            [y0, y0 + height],
+            transform=transform,
+            color="#3d3d3d",
+            lw=0.55,
+        )
+        row_count = len(detail.rows)
+        row_height = (header_y - y0) / max(row_count + (1 if detail.column_titles else 0), 1)
+        if detail.column_titles:
+            for col_index, title in enumerate(detail.column_titles):
+                center_x = x0 + label_w + (col_index + 0.5) * (value_w / col_count)
+                ax.text(
+                    center_x,
+                    header_y - 0.5 * row_height,
+                    title,
+                    ha="center",
+                    va="center",
+                    fontsize=float(report_style["detail_label_fontsize"]),
+                    fontweight="bold",
+                    color="#111111",
+                    **text_kwargs,
+                )
+            start_row_index = 1
+        else:
+            start_row_index = 0
+        for line_index in range(start_row_index, row_count + start_row_index + 1):
+            y = header_y - line_index * row_height
+            ax.plot([x0, x0 + width], [y, y], transform=transform, color="#6b6b6b", lw=0.35)
+
+        def draw_cells(
+            area_x: float,
+            area_y: float,
+            area_width: float,
+            area_height: float,
+            cells: tuple[ReportDetailCellSpec, ...],
+            *,
+            is_label: bool,
+        ) -> None:
+            from matplotlib.patches import Rectangle
+
+            cell_width = area_width / len(cells)
+            for cell_index, cell in enumerate(cells):
+                cell_x = area_x + cell_index * cell_width
+                previous_cell = cells[cell_index - 1] if cell_index else None
+                if cell.background_color:
+                    ax.add_patch(
+                        Rectangle(
+                            (cell_x, area_y),
+                            cell_width,
+                            area_height,
+                            facecolor=cell.background_color,
+                            edgecolor="none",
+                            transform=transform,
+                            zorder=0.12,
+                        )
+                    )
+                if (
+                    cell_index
+                    and previous_cell is not None
+                    and previous_cell.divider_right_visible
+                    and cell.divider_left_visible
+                ):
+                    ax.plot(
+                        [cell_x, cell_x],
+                        [area_y, area_y + area_height],
+                        transform=transform,
+                        color="#6b6b6b",
+                        lw=0.35,
+                    )
+                text = self._resolve_report_value(cell.value, dataset)
+                if not text:
+                    continue
+                text_kwargs_local: dict[str, Any] = dict(text_kwargs)
+                if cell.font_weight is not None:
+                    text_kwargs_local["fontweight"] = cell.font_weight
+                ax.text(
+                    cell_x + (0.008 if is_label else 0.5 * cell_width),
+                    area_y + 0.5 * area_height,
+                    text,
+                    ha="left" if is_label else "center",
+                    va="center",
+                    fontsize=(
+                        float(report_style["detail_label_fontsize"])
+                        if is_label
+                        else float(report_style["detail_value_fontsize"])
+                    ),
+                    color=cell.text_color or "#111111",
+                    **text_kwargs_local,
+                )
+
+        for row_index, row in enumerate(detail.rows):
+            row_top = header_y - (row_index + start_row_index) * row_height
+            row_bottom = row_top - row_height
+            draw_cells(
+                x0,
+                row_bottom,
+                label_w,
+                row_height,
+                row.label_cells,
+                is_label=True,
+            )
+            for col_index, column in enumerate(row.columns):
+                column_x = x0 + label_w + col_index * (value_w / col_count)
+                draw_cells(
+                    column_x,
+                    row_bottom,
+                    value_w / col_count,
+                    row_height,
+                    column.cells,
+                    is_label=False,
+                )
+
+    def _draw_report_page(
+        self,
+        fig,
+        report: ReportBlockSpec,
+        dataset: WellDataset,
+        *,
+        compact: bool,
+        frame: tuple[float, float, float, float] | None = None,
+    ) -> None:
+        ax = fig.add_axes([0, 0, 1, 1] if frame is None else list(frame))
+        ax.set_axis_off()
+        report_style = self._style_section("report")
+        rotated = not compact
+        transform = self._report_page_transform(ax, rotated=rotated)
+        text_rotation = -90.0 if rotated else 0.0
+        self._draw_report_outer_frame(ax, report_style)
+        if compact:
+            self._draw_report_tail_section(
+                ax,
+                report,
+                dataset,
+                report_style,
+                transform=transform,
+                text_rotation=text_rotation,
+            )
+            return
+        self._draw_report_cover_section(
+            ax,
+            report,
+            dataset,
+            report_style,
+            transform=transform,
+            text_rotation=text_rotation,
+        )
+        if report.detail is not None:
+            self._draw_report_detail_table(
+                ax,
+                report.detail,
+                dataset,
+                report_style,
+                transform=transform,
+                text_rotation=text_rotation,
+            )
 
     def _draw_header(self, fig, document, dataset, page_layout) -> None:
         header_style = self._style_section("header")

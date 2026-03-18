@@ -46,6 +46,14 @@ from .model import (
     ReferenceCurveTickSide,
     ReferenceEventSpec,
     ReferenceTrackSpec,
+    ReportBlockSpec,
+    ReportDetailCellSpec,
+    ReportDetailColumnSpec,
+    ReportDetailKind,
+    ReportDetailRowSpec,
+    ReportDetailSpec,
+    ReportFieldSpec,
+    ReportValueSpec,
     ScaleKind,
     ScaleSpec,
     StyleSpec,
@@ -840,6 +848,7 @@ def _build_header(data: Mapping[str, Any] | None) -> HeaderSpec:
         title=data.get("title"),
         subtitle=data.get("subtitle"),
         fields=fields,
+        report=_build_report_block(data.get("report")),
     )
 
 
@@ -848,6 +857,237 @@ def _build_footer(data: Mapping[str, Any] | None) -> FooterSpec:
         return FooterSpec()
     lines = tuple(str(item) for item in data.get("lines", []))
     return FooterSpec(lines=lines)
+
+
+def _build_report_value(data: Any, *, context: str) -> ReportValueSpec:
+    if data is None:
+        return ReportValueSpec()
+    if isinstance(data, Mapping):
+        value = data.get("value")
+        source_key = data.get("source_key")
+        default = data.get("default", "")
+        try:
+            return ReportValueSpec(
+                value=str(value) if value is not None else None,
+                source_key=str(source_key) if source_key is not None else None,
+                default=str(default),
+            )
+        except (TypeError, ValueError) as exc:
+            raise TemplateValidationError(f"Invalid {context} configuration.") from exc
+    try:
+        return ReportValueSpec(value=str(data))
+    except (TypeError, ValueError) as exc:
+        raise TemplateValidationError(f"Invalid {context} value.") from exc
+
+
+def _build_report_detail_cell(data: Any, *, context: str) -> ReportDetailCellSpec:
+    value = _build_report_value(data, context=context)
+    background_color: str | None = None
+    text_color: str | None = None
+    font_weight: str | None = None
+    divider_left_visible = True
+    divider_right_visible = True
+    if isinstance(data, Mapping):
+        if data.get("background_color") is not None:
+            background_color = str(data["background_color"])
+        if data.get("text_color") is not None:
+            text_color = str(data["text_color"])
+        if data.get("font_weight") is not None:
+            font_weight = str(data["font_weight"])
+        if data.get("divider_left_visible") is not None:
+            divider_left_visible = bool(data["divider_left_visible"])
+        if data.get("divider_right_visible") is not None:
+            divider_right_visible = bool(data["divider_right_visible"])
+    try:
+        return ReportDetailCellSpec(
+            value=value,
+            background_color=background_color,
+            text_color=text_color,
+            font_weight=font_weight,
+            divider_left_visible=divider_left_visible,
+            divider_right_visible=divider_right_visible,
+        )
+    except (TypeError, ValueError) as exc:
+        raise TemplateValidationError(f"Invalid {context} configuration.") from exc
+
+
+def _build_report_block(data: Any) -> ReportBlockSpec | None:
+    if data is None:
+        return None
+    report_data = _ensure_mapping(data, context="header.report")
+    general_fields: list[ReportFieldSpec] = []
+    general_fields_data = _ensure_sequence(
+        report_data.get("general_fields", []),
+        context="header.report.general_fields",
+    )
+    for index, item in enumerate(general_fields_data):
+        field_data = _ensure_mapping(
+            item, context=f"header.report.general_fields[{index}]"
+        )
+        try:
+            general_fields.append(
+                ReportFieldSpec(
+                    key=str(field_data["key"]),
+                    label=str(field_data["label"]),
+                    value=_build_report_value(
+                        field_data.get("value")
+                        if "value" in field_data
+                        else {
+                            key: field_data[key]
+                            for key in ("source_key", "default")
+                            if key in field_data
+                        },
+                        context=f"header.report.general_fields[{index}]",
+                    ),
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise TemplateValidationError(
+                f"Invalid header.report.general_fields[{index}] configuration."
+            ) from exc
+
+    service_titles = tuple(
+        _build_report_value(
+            item,
+            context=f"header.report.service_titles[{index}]",
+        )
+        for index, item in enumerate(
+            _ensure_sequence(
+                report_data.get("service_titles", []),
+                context="header.report.service_titles",
+            )
+        )
+    )
+
+    detail_spec: ReportDetailSpec | None = None
+    detail_data = report_data.get("detail")
+    if detail_data is not None:
+        detail_mapping = _ensure_mapping(detail_data, context="header.report.detail")
+        rows: list[ReportDetailRowSpec] = []
+        row_items = _ensure_sequence(
+            detail_mapping.get("rows", []),
+            context="header.report.detail.rows",
+        )
+        for index, item in enumerate(row_items):
+            row_data = _ensure_mapping(item, context=f"header.report.detail.rows[{index}]")
+            try:
+                if "label_cells" in row_data:
+                    label_items = _ensure_sequence(
+                        row_data.get("label_cells", []),
+                        context=f"header.report.detail.rows[{index}].label_cells",
+                    )
+                    label_cells = tuple(
+                        _build_report_detail_cell(
+                            label_item,
+                            context=(
+                                f"header.report.detail.rows[{index}].label_cells[{label_index}]"
+                            ),
+                        )
+                        for label_index, label_item in enumerate(label_items)
+                    )
+                else:
+                    label_cells = (
+                        _build_report_detail_cell(
+                            row_data["label"],
+                            context=f"header.report.detail.rows[{index}].label",
+                        ),
+                    )
+
+                if "columns" in row_data:
+                    column_items = _ensure_sequence(
+                        row_data.get("columns", []),
+                        context=f"header.report.detail.rows[{index}].columns",
+                    )
+                    columns = []
+                    for column_index, column_item in enumerate(column_items):
+                        column_data = _ensure_mapping(
+                            column_item,
+                            context=f"header.report.detail.rows[{index}].columns[{column_index}]",
+                        )
+                        cell_items = _ensure_sequence(
+                            column_data.get("cells", []),
+                            context=(
+                                f"header.report.detail.rows[{index}].columns[{column_index}].cells"
+                            ),
+                        )
+                        columns.append(
+                            ReportDetailColumnSpec(
+                                cells=tuple(
+                                    _build_report_detail_cell(
+                                        cell_item,
+                                        context=(
+                                            "header.report.detail.rows"
+                                            f"[{index}].columns[{column_index}].cells[{cell_index}]"
+                                        ),
+                                    )
+                                    for cell_index, cell_item in enumerate(cell_items)
+                                )
+                            )
+                        )
+                    column_specs = tuple(columns)
+                else:
+                    value_items = _ensure_sequence(
+                        row_data.get("values", []),
+                        context=f"header.report.detail.rows[{index}].values",
+                    )
+                    column_specs = tuple(
+                        ReportDetailColumnSpec(
+                            cells=(
+                                _build_report_detail_cell(
+                                    value_item,
+                                    context=(
+                                        f"header.report.detail.rows[{index}].values[{value_index}]"
+                                    ),
+                                ),
+                            )
+                        )
+                        for value_index, value_item in enumerate(value_items)
+                    )
+                rows.append(
+                    ReportDetailRowSpec(
+                        label_cells=label_cells,
+                        columns=column_specs,
+                    )
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise TemplateValidationError(
+                    f"Invalid header.report.detail.rows[{index}] configuration."
+                ) from exc
+        try:
+            detail_spec = ReportDetailSpec(
+                kind=ReportDetailKind(str(detail_mapping["kind"]).strip().lower()),
+                title=(
+                    str(detail_mapping["title"])
+                    if detail_mapping.get("title") is not None
+                    else None
+                ),
+                column_titles=tuple(
+                    str(item)
+                    for item in _ensure_sequence(
+                        detail_mapping.get("column_titles", []),
+                        context="header.report.detail.column_titles",
+                    )
+                ),
+                rows=tuple(rows),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise TemplateValidationError("Invalid header.report.detail configuration.") from exc
+
+    try:
+        return ReportBlockSpec(
+            enabled=bool(report_data.get("enabled", True)),
+            provider_name=(
+                str(report_data["provider_name"])
+                if report_data.get("provider_name") is not None
+                else None
+            ),
+            general_fields=tuple(general_fields),
+            service_titles=service_titles,
+            detail=detail_spec,
+            tail_enabled=bool(report_data.get("tail_enabled", False)),
+        )
+    except (TypeError, ValueError) as exc:
+        raise TemplateValidationError("Invalid header.report configuration.") from exc
 
 
 def _build_track_header(data: Any) -> TrackHeaderSpec:

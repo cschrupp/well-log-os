@@ -2009,6 +2009,83 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
             # Without auto-strip this would be one continuous page per section (2 pages total).
             self.assertGreater(result.page_count, 2)
 
+    def test_render_documents_adds_heading_and_tail_report_pages(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "report pages",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "depth_range": [1000.0, 1004.0],
+                "header": {
+                    "report": {
+                        "provider_name": "Company",
+                        "general_fields": [
+                            {"key": "company", "label": "Company", "value": "University of Utah"},
+                            {"key": "well", "label": "Well", "source_key": "WELL"},
+                            {"key": "field", "label": "Field", "value": "None"},
+                            {"key": "scale", "label": "Scale", "value": "m 1:200"},
+                            {
+                                "key": "logging_date",
+                                "label": "Logging Date",
+                                "value": "06-Oct-2021",
+                            },
+                        ],
+                        "service_titles": ["Cement Bond Log", "Variable Density Log"],
+                        "detail": {
+                            "kind": "cased_hole",
+                            "column_titles": ["Measured", "Recorded"],
+                            "rows": [
+                                {"label": "Date", "values": ["06-Oct-2021", "06-Oct-2021"]},
+                                {"label": "Bottom Log Interval", "values": ["8540 ft", "8540 ft"]},
+                            ],
+                        },
+                        "tail_enabled": True,
+                    }
+                },
+                "tracks": [
+                    {
+                        "id": "depth",
+                        "title": "Depth",
+                        "kind": "reference",
+                        "width_mm": 16,
+                        "reference": {"define_layout": True, "unit": "m", "scale_ratio": 200},
+                    },
+                    {
+                        "id": "gr",
+                        "title": "GR",
+                        "kind": "normal",
+                        "width_mm": 30,
+                        "elements": [{"kind": "curve", "channel": "GR"}],
+                    },
+                ],
+            }
+        )
+        depth = np.array([1000.0, 1002.0, 1004.0], dtype=float)
+        dataset = WellDataset(name="report pages", well_metadata={"WELL": "Forge 78B-32"})
+        dataset.add_channel(ScalarChannel("GR", depth, "m", "gAPI", values=np.array([10, 20, 30])))
+
+        renderer = MatplotlibRenderer()
+        result = renderer.render_documents((document,), dataset)
+        try:
+            self.assertEqual(result.page_count, 3)
+            self.assertEqual(len(result.artifact), 3)
+            self.assertAlmostEqual(result.artifact[0].get_size_inches()[0], 210.0 / 25.4, places=3)
+            self.assertAlmostEqual(result.artifact[0].get_size_inches()[1], 297.0 / 25.4, places=3)
+            heading_bounds = result.artifact[0].axes[0].get_position().bounds
+            tail_bounds = result.artifact[-1].axes[0].get_position().bounds
+            heading_texts = [text.get_text() for ax in result.artifact[0].axes for text in ax.texts]
+            tail_texts = [text.get_text() for ax in result.artifact[-1].axes for text in ax.texts]
+            self.assertAlmostEqual(heading_bounds[1], 0.5, places=3)
+            self.assertAlmostEqual(heading_bounds[3], 0.5, places=3)
+            self.assertAlmostEqual(tail_bounds[1], 0.0, places=3)
+            self.assertAlmostEqual(tail_bounds[3], 0.22, places=3)
+            self.assertTrue(any("University of Utah" in value for value in heading_texts))
+            self.assertTrue(any("Forge 78B-32" in value for value in tail_texts))
+            self.assertTrue(any("m 1:200" in value for value in tail_texts))
+        finally:
+            for figure in result.artifact:
+                plt.close(figure)
+
     def test_render_array_track_with_colorbar_and_sample_axis(self) -> None:
         document = document_from_mapping(
             {

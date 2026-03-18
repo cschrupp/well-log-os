@@ -1,0 +1,389 @@
+template:
+  path: ../templates/wireline_base.template.yaml
+version: 1
+name: CBL Report Pages Demo
+render:
+  output_path: ../workspace/renders/CBL_report_pages.pdf
+  dpi: 300
+  continuous_strip_page_height_mm: 297
+  matplotlib:
+    style:
+      report:
+        summary_label_fontsize: 8.0
+        summary_value_fontsize: 10.5
+        provider_fontsize: 16.0
+        service_fontsize: 7.5
+        field_label_fontsize: 7.0
+        field_value_fontsize: 7.8
+        detail_header_fontsize: 9.0
+        detail_label_fontsize: 6.4
+        detail_value_fontsize: 6.4
+document:
+  depth_range:
+    - 70
+    - 210
+  page:
+    margin_left_mm: 0
+    margin_right_mm: 8
+    margin_top_mm: 0
+    margin_bottom_mm: 0
+    track_gap_mm: 0
+    header_height_mm: 0
+    track_header_height_mm: 28
+    footer_height_mm: 0
+  layout:
+    heading:
+      enabled: true
+      provider_name: Company
+      general_fields:
+        - key: company
+          label: Company
+          value: University of Utah
+        - key: well
+          label: Well
+          value: Forge 78B-32
+        - key: field
+          label: Field
+          value: None
+        - key: county
+          label: County
+          value: Beaver
+        - key: country
+          label: Country
+          value: USA
+        - key: scale
+          label: Scale
+          value: ft 1:240
+        - key: location
+          label: Location
+          value: "Lat: 38.500171  Long: -112.88221"
+        - key: logging_date
+          label: Logging Date
+          value: 06-Oct-2021
+        - key: top_log_interval
+          label: Top Log Interval
+          value: 100.00 ft
+        - key: bottom_log_interval
+          label: Bottom Log Interval
+          value: 8489.00 ft
+        - key: fluid_type
+          label: Casing Fluid Type
+          value: Water
+      service_titles:
+        - Cement Bond Log
+        - Variable Density Log
+        - Gamma Ray - CCL
+      detail:
+        kind: cased_hole
+        title: Cased Hole
+        rows:
+          - label: Date
+            values:
+              - 06-Oct-2021
+              - ""
+          - label_cells:
+              - Run
+              - Down
+            columns:
+              - cells: [""]
+              - cells: [""]
+          - label: Service Order
+            values:
+              - JDS-42-00090-03
+              - ""
+          - label: Driller Depth
+            values:
+              - ""
+              - ""
+          - label: Logged Depth
+            values:
+              - ""
+              - ""
+          - label: First Reading (Bottom)
+            values:
+              - ""
+              - ""
+          - label: Last Reading
+            columns:
+              - cells:
+                  - 0.0
+                  - ft
+              - cells: [""]
+          - label: Start Time
+            columns:
+              - cells:
+                  - 12:00
+                  - HS
+              - cells: [""]
+          - label: End Time
+            columns:
+              - cells:
+                  - 18:00
+                  - HS
+              - cells: [""]
+          - label: Drill Time
+            columns:
+              - cells:
+                  - 6:00
+                  - HS
+              - cells: [""]
+          - label: Injection Type
+            values:
+              - ""
+              - ""
+          - label: Fluid Density
+            values:
+              - g/L
+              - ""
+          - label: Fluid Salinity
+            values:
+              - ppm
+              - ""
+          - label: Fluid Level
+            values:
+              - ft
+              - ""
+          - label: Cement Top
+            columns:
+              - cells:
+                  - 80.0
+                  - ft
+              - cells: [""]
+          - label: Head Pressure
+            values:
+              - psi
+              - ""
+          - label: Maximum Deviation
+            values:
+              - degrees
+              - ""
+          - label: Nominal Speed
+            columns:
+              - cells:
+                  - 12.0
+                  - ft/min
+              - cells: [""]
+          - label: Bottom Temperature
+            values:
+              - ""
+              - ""
+          - label: Reference Log
+            columns:
+              - cells:
+                  - Resistive
+              - cells: [""]
+          - label: Reference Date
+            columns:
+              - cells:
+                  - 1-Mar-90
+              - cells: [""]
+          - label_cells:
+              - Equipment No.
+              - Base
+            columns:
+              - cells:
+                  - HL-
+                  - C. Rivadavia
+              - cells: [""]
+          - label: Logged By
+            values:
+              - ""
+              - ""
+          - label: Witnessed By
+            values:
+              - ""
+              - ""
+    comments: []
+    log_sections:
+      - id: main
+        title: TIME_1900 - Time Marked every 60.00 (s)
+        subtitle: ""
+        data:
+          source_path: ../workspace/data/CBL_Main.dlis
+          source_format: dlis
+        tracks:
+          - id: combo
+            title: ""
+            kind: normal
+            width_mm: 56
+            position: 1
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 4
+                  spacing_mode: count
+                secondary:
+                  scale: linear
+                  line_count: 5
+                  spacing_mode: count
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: depth
+            title: ""
+            kind: reference
+            width_mm: 14
+            position: 2
+            reference:
+              axis: depth
+              define_layout: true
+              unit: ft
+              scale_ratio: 240
+              major_step: 10
+              secondary_grid:
+                display: true
+                line_count: 5
+              header:
+                display_unit: true
+                display_scale: true
+                display_annotations: false
+              number_format:
+                format: automatic
+                precision: 0
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: false
+                  reserve_space: false
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: cbl
+            title: ""
+            kind: normal
+            width_mm: 56
+            position: 3
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 2
+                  spacing_mode: count
+                secondary:
+                  scale: linear
+                  line_count: 5
+                  spacing_mode: count
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: vdl
+            title: ""
+            kind: array
+            width_mm: 50
+            position: 4
+            grid:
+              vertical:
+                main:
+                  visible: false
+                secondary:
+                  visible: false
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+    tail:
+      enabled: true
+  bindings:
+    on_missing: skip
+    channels:
+      - section: main
+        channel: GR_STGC
+        track_id: combo
+        kind: curve
+        label: Gamma Ray (GR_STGC) QTGC-B
+        style:
+          color: "#11c920"
+          line_width: 0.8
+        scale:
+          kind: linear
+          min: 0
+          max: 150
+      - section: main
+        channel: TT
+        track_id: combo
+        kind: curve
+        label: Transit Time for CBL (TT) QSLT-B
+        style:
+          color: "#2142ff"
+          line_width: 0.8
+        scale:
+          kind: linear
+          min: 400
+          max: 200
+      - section: main
+        channel: CBL
+        track_id: cbl
+        kind: curve
+        label: CBL Amplitude (CBL) QSLT-B
+        style:
+          color: "#111111"
+          line_width: 0.8
+        scale:
+          kind: linear
+          min: 0
+          max: 100
+      - section: main
+        channel: VDL
+        track_id: vdl
+        kind: raster
+        label: VDL VariableDensity (VDL) QSLT-B
+        profile: vdl
+        style:
+          colormap: gray_r
+        colorbar:
+          enabled: true
+          label: Amplitude
+          position: header
+        sample_axis:
+          enabled: false
+          unit: us
+          source_origin: 40
+          source_step: 10
+          min: 200
+          max: 1200
+          ticks: 7
+        waveform:
+          enabled: true
+          stride: 6
+          amplitude_scale: 0.28
+          line_width: 0.16
+          color: "#4a4a4a"

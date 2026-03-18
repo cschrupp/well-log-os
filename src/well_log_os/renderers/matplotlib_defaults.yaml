@@ -9,6 +9,33 @@ header:
   field_start_y: 0.935
   field_step_y: 0.018
   field_fontsize: 7.0
+report:
+  background_color: "#ffffff"
+  border_color: "#1f1f1f"
+  border_linewidth: 0.9
+  heading_frame_x: 0.0
+  heading_frame_y: 0.5
+  heading_frame_width: 1.0
+  heading_frame_height: 0.5
+  tail_frame_x: 0.0
+  tail_frame_y: 0.0
+  tail_frame_width: 1.0
+  tail_frame_height: 0.22
+  summary_band_color: "#0b3a6e"
+  summary_text_color: "#ffffff"
+  summary_label_fontsize: 14.0
+  summary_value_fontsize: 18.0
+  provider_fontsize: 22.0
+  title_fontsize: 18.0
+  service_fontsize: 11.0
+  field_label_fontsize: 9.0
+  field_value_fontsize: 11.0
+  detail_header_fontsize: 12.0
+  detail_label_fontsize: 8.5
+  detail_value_fontsize: 8.5
+  tail_service_fontsize: 20.0
+  tail_label_fontsize: 13.0
+  tail_value_fontsize: 17.0
 footer:
   line_x: 0.05
   line_start_y: 0.03

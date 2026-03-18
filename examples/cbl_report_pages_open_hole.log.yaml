@@ -1,0 +1,389 @@
+template:
+  path: ../templates/wireline_base.template.yaml
+version: 1
+name: CBL Report Pages Open Hole Demo
+render:
+  output_path: ../workspace/renders/CBL_report_pages_open_hole.pdf
+  dpi: 300
+  continuous_strip_page_height_mm: 297
+  matplotlib:
+    style:
+      report:
+        summary_label_fontsize: 8.0
+        summary_value_fontsize: 10.5
+        provider_fontsize: 16.0
+        service_fontsize: 7.5
+        field_label_fontsize: 7.0
+        field_value_fontsize: 7.8
+        detail_header_fontsize: 9.0
+        detail_label_fontsize: 6.4
+        detail_value_fontsize: 6.4
+document:
+  depth_range:
+    - 70
+    - 210
+  page:
+    margin_left_mm: 0
+    margin_right_mm: 8
+    margin_top_mm: 0
+    margin_bottom_mm: 0
+    track_gap_mm: 0
+    header_height_mm: 0
+    track_header_height_mm: 28
+    footer_height_mm: 0
+  layout:
+    heading:
+      enabled: true
+      provider_name: Company
+      general_fields:
+        - key: company
+          label: Company
+          value: University of Utah
+        - key: well
+          label: Well
+          value: Forge 78B-32
+        - key: field
+          label: Field
+          value: None
+        - key: county
+          label: County
+          value: Beaver
+        - key: country
+          label: Country
+          value: USA
+        - key: scale
+          label: Scale
+          value: ft 1:240
+        - key: location
+          label: Location
+          value: "Lat: 38.500171  Long: -112.88221"
+        - key: logging_date
+          label: Logging Date
+          value: 06-Oct-2021
+        - key: top_log_interval
+          label: Top Log Interval
+          value: 100.00 ft
+        - key: bottom_log_interval
+          label: Bottom Log Interval
+          value: 8489.00 ft
+        - key: fluid_type
+          label: Casing Fluid Type
+          value: Water
+      service_titles:
+        - Cement Bond Log
+        - Variable Density Log
+        - Gamma Ray - CCL
+      detail:
+        kind: open_hole
+        title: Open Hole
+        rows:
+          - label: Date
+            values: ["06-Oct-2021", ""]
+          - label_cells:
+              - Run
+              - Down
+            columns:
+              - cells: [""]
+              - cells: [""]
+          - label: Service Order
+            values: ["JDS-42-00090-03", ""]
+          - label: Driller Depth
+            values: ["", ""]
+          - label: Logged Depth
+            values: ["", ""]
+          - label: First Reading (Bottom)
+            values: ["", ""]
+          - label: Last Reading
+            values: ["", ""]
+          - label: Drill Pipe
+            values: ["", ""]
+          - label: Logged String
+            values: ["", ""]
+          - label: Hole Diameter
+            values: ["", ""]
+          - label: Injection Type
+            values: ["", ""]
+          - label_cells:
+              - Density
+              - Viscosity
+            columns:
+              - cells:
+                  - G/L
+                  - s
+              - cells:
+                  - G/L
+                  - s
+          - label_cells:
+              - pH
+              - Filtered Water
+            columns:
+              - cells:
+                  - ""
+                  - ""
+              - cells:
+                  - ""
+                  - C3
+          - label: Sample Source
+            values: ["Last Circulated", ""]
+          - label: RM @ Measured Temp
+            columns:
+              - cells:
+                  - OHMM
+                  - value: "@"
+                    divider_left_visible: false
+                    divider_right_visible: false
+                  - 75.0 C
+              - cells:
+                  - OHMM
+                  - value: "@"
+                    divider_left_visible: false
+                    divider_right_visible: false
+                  - C
+          - label: RMF @ Measured Temp
+            columns:
+              - cells:
+                  - ""
+                  - value: "@"
+                    divider_left_visible: false
+                    divider_right_visible: false
+                  - ""
+              - cells:
+                  - OHMM
+                  - value: "@"
+                    divider_left_visible: false
+                    divider_right_visible: false
+                  - C
+          - label: RMC @ Measured Temp
+            columns:
+              - cells:
+                  - ""
+                  - value: "@"
+                    divider_left_visible: false
+                    divider_right_visible: false
+                  - ""
+              - cells:
+                  - OHMM
+                  - value: "@"
+                    divider_left_visible: false
+                    divider_right_visible: false
+                  - C
+          - label: RMF Source
+            columns:
+              - cells:
+                  - Measurement
+              - cells:
+                  - Measurement
+          - label: RM @ Bottom Temp
+            columns:
+              - cells:
+                  - OHMM
+                  - value: "@"
+                    divider_left_visible: false
+                    divider_right_visible: false
+                  - C
+              - cells:
+                  - OHMM
+                  - value: "@"
+                    divider_left_visible: false
+                    divider_right_visible: false
+                  - C
+          - label: Time Since End of Circulation
+            columns:
+              - cells:
+                  - 5:00
+                  - HS
+              - cells: [""]
+          - label: Maximum Temperature
+            values: ["C", ""]
+          - label_cells:
+              - Equipment No.
+              - Base
+            columns:
+              - cells:
+                  - HL-
+                  - C. Rivadavia
+              - cells: [""]
+          - label: Logged By
+            values: ["", ""]
+          - label: Witnessed By
+            values: ["", ""]
+    comments: []
+    log_sections:
+      - id: main
+        title: TIME_1900 - Time Marked every 60.00 (s)
+        subtitle: ""
+        data:
+          source_path: ../workspace/data/CBL_Main.dlis
+          source_format: dlis
+        tracks:
+          - id: combo
+            title: ""
+            kind: normal
+            width_mm: 56
+            position: 1
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 4
+                  spacing_mode: count
+                secondary:
+                  scale: linear
+                  line_count: 5
+                  spacing_mode: count
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: depth
+            title: ""
+            kind: reference
+            width_mm: 14
+            position: 2
+            reference:
+              axis: depth
+              define_layout: true
+              unit: ft
+              scale_ratio: 240
+          - id: cbl
+            title: ""
+            kind: normal
+            width_mm: 44
+            position: 3
+            grid:
+              vertical:
+                main:
+                  scale: linear
+                  line_count: 4
+                  spacing_mode: count
+                secondary:
+                  scale: linear
+                  line_count: 5
+                  spacing_mode: count
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+          - id: vdl
+            title: ""
+            kind: array
+            width_mm: 44
+            position: 4
+            x_scale:
+              kind: linear
+              min: 200
+              max: 1200
+            track_header:
+              objects:
+                - kind: title
+                  enabled: false
+                  reserve_space: false
+                - kind: scale
+                  enabled: true
+                  line_units: 1
+                - kind: legend
+                  enabled: true
+                  line_units: 2
+                - kind: divisions
+                  enabled: false
+                  reserve_space: false
+    tail:
+      enabled: true
+  bindings:
+    on_missing: skip
+    channels:
+      - section: main
+        track_id: combo
+        kind: curve
+        channel: ECGR_STGC
+        label: Gamma Ray (ECGR_STGC) QTGC-B
+        style:
+          color: "#00cc22"
+          line_width: 0.7
+        scale:
+          kind: linear
+          min: 0
+          max: 150
+      - section: main
+        track_id: combo
+        kind: curve
+        channel: TT
+        label: Transit Time for CBL (TT) QSLT-B
+        style:
+          color: "#2244ff"
+          line_width: 0.7
+        scale:
+          kind: linear
+          min: 400
+          max: 200
+      - section: main
+        track_id: combo
+        kind: curve
+        channel: TENS
+        label: Cable Tension (TENS)
+        style:
+          color: "#111111"
+          line_width: 0.6
+          line_style: dashed
+        scale:
+          kind: linear
+          min: 5000
+          max: 0
+      - section: main
+        track_id: cbl
+        kind: curve
+        channel: CBL
+        label: CBL Amplitude (CBL) QSLT-B
+        style:
+          color: "#111111"
+          line_width: 0.7
+        scale:
+          kind: linear
+          min: 0
+          max: 100
+      - section: main
+        track_id: vdl
+        kind: raster
+        channel: VDL
+        label: VDL VariableDensity (VDL) QSLT-B
+        profile: vdl
+        style:
+          colormap: gray_r
+        colorbar:
+          enabled: true
+          label: Amplitude
+          position: header
+        sample_axis:
+          enabled: false
+          unit: us
+          source_origin: 40
+          source_step: 10
+          min: 200
+          max: 1200
+          ticks: 7
+        waveform:
+          enabled: true
+          stride: 6
+          amplitude_scale: 0.28
+          line_width: 0.16
+          color: "#4a4a4a"

@@ -108,6 +108,11 @@ class AnnotationLabelMode(StrEnum):
     DEDICATED_LANE = "dedicated_lane"
 
 
+class ReportDetailKind(StrEnum):
+    OPEN_HOLE = "open_hole"
+    CASED_HOLE = "cased_hole"
+
+
 _ANNOTATION_MARKER_SHAPES = {
     "circle",
     "square",
@@ -1038,10 +1043,144 @@ class HeaderField:
 
 
 @dataclass(slots=True)
+class ReportValueSpec:
+    value: str | None = None
+    source_key: str | None = None
+    default: str = ""
+
+    def __post_init__(self) -> None:
+        if self.source_key is not None and not str(self.source_key).strip():
+            raise ValueError("Report value source_key must be non-empty when provided.")
+        if self.value is not None:
+            self.value = str(self.value)
+        if self.source_key is not None:
+            self.source_key = str(self.source_key).strip()
+        self.default = str(self.default)
+
+
+@dataclass(slots=True)
+class ReportFieldSpec:
+    key: str
+    label: str
+    value: ReportValueSpec = field(default_factory=ReportValueSpec)
+
+    def __post_init__(self) -> None:
+        if not str(self.key).strip():
+            raise ValueError("Report field key must be non-empty.")
+        if not str(self.label).strip():
+            raise ValueError("Report field label must be non-empty.")
+        self.key = str(self.key).strip().lower()
+        self.label = str(self.label)
+
+
+@dataclass(slots=True)
+class ReportDetailCellSpec:
+    value: ReportValueSpec = field(default_factory=ReportValueSpec)
+    background_color: str | None = None
+    text_color: str | None = None
+    font_weight: str | None = None
+    divider_left_visible: bool = True
+    divider_right_visible: bool = True
+
+    def __post_init__(self) -> None:
+        if self.background_color is not None and not str(self.background_color).strip():
+            raise ValueError("Report detail cell background_color must be non-empty when set.")
+        if self.text_color is not None and not str(self.text_color).strip():
+            raise ValueError("Report detail cell text_color must be non-empty when set.")
+        if not isinstance(self.divider_left_visible, bool):
+            raise ValueError("Report detail cell divider_left_visible must be boolean.")
+        if not isinstance(self.divider_right_visible, bool):
+            raise ValueError("Report detail cell divider_right_visible must be boolean.")
+        if self.font_weight is not None:
+            weight = str(self.font_weight).strip().lower()
+            if weight not in {"normal", "bold"}:
+                raise ValueError("Report detail cell font_weight must be normal or bold.")
+            self.font_weight = weight
+
+
+@dataclass(slots=True)
+class ReportDetailColumnSpec:
+    cells: tuple[ReportDetailCellSpec, ...]
+
+    def __post_init__(self) -> None:
+        if not self.cells:
+            raise ValueError("Report detail columns must contain at least one cell.")
+        if len(self.cells) > 4:
+            raise ValueError("Report detail columns support at most 4 subcells.")
+
+
+@dataclass(slots=True)
+class ReportDetailRowSpec:
+    label_cells: tuple[ReportDetailCellSpec, ...]
+    columns: tuple[ReportDetailColumnSpec, ...]
+
+    def __post_init__(self) -> None:
+        if not self.label_cells:
+            raise ValueError("Report detail rows must contain at least one label cell.")
+        if len(self.label_cells) > 4:
+            raise ValueError("Report detail rows support at most 4 label subcells.")
+        if not self.columns:
+            raise ValueError("Report detail rows must contain at least one data column.")
+        if len(self.columns) > 4:
+            raise ValueError("Report detail rows support at most 4 data columns.")
+
+
+@dataclass(slots=True)
+class ReportDetailSpec:
+    kind: ReportDetailKind
+    title: str | None = None
+    column_titles: tuple[str, ...] = ()
+    rows: tuple[ReportDetailRowSpec, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.title is not None and not str(self.title).strip():
+            raise ValueError("Report detail title must be non-empty when provided.")
+        if self.column_titles:
+            if len(self.column_titles) > 4:
+                raise ValueError("Report detail supports at most 4 column titles.")
+            normalized_titles = []
+            for title in self.column_titles:
+                title_text = str(title)
+                normalized_titles.append(title_text)
+            self.column_titles = tuple(normalized_titles)
+        if not self.rows:
+            raise ValueError("Report detail rows cannot be empty.")
+        expected_count = (
+            len(self.column_titles) if self.column_titles else len(self.rows[0].columns)
+        )
+        if expected_count <= 0 or expected_count > 4:
+            raise ValueError("Report detail must define between 1 and 4 value columns.")
+        for row in self.rows:
+            if len(row.columns) != expected_count:
+                raise ValueError(
+                    "All report detail rows must have the same number of value columns."
+                )
+        if self.title is None:
+            self.title = "Open Hole" if self.kind == ReportDetailKind.OPEN_HOLE else "Cased Hole"
+
+
+@dataclass(slots=True)
+class ReportBlockSpec:
+    enabled: bool = True
+    provider_name: str | None = None
+    general_fields: tuple[ReportFieldSpec, ...] = ()
+    service_titles: tuple[ReportValueSpec, ...] = ()
+    detail: ReportDetailSpec | None = None
+    tail_enabled: bool = False
+
+    def __post_init__(self) -> None:
+        if self.provider_name is not None and not str(self.provider_name).strip():
+            raise ValueError("Report block provider_name must be non-empty when provided.")
+        if self.provider_name is not None:
+            self.provider_name = str(self.provider_name)
+
+
+@dataclass(slots=True)
 class HeaderSpec:
     title: str | None = None
     subtitle: str | None = None
     fields: tuple[HeaderField, ...] = ()
+    report: ReportBlockSpec | None = None
 
 
 @dataclass(slots=True)

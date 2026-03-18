@@ -423,6 +423,7 @@ class LogFileTests(unittest.TestCase):
             "style": {
                 "track": {"x_tick_labelsize": 7.5},
                 "track_header": {"background_color": "#ffffff"},
+                "report": {"summary_band_color": "#123456"},
             }
         }
         spec = logfile_from_mapping(payload)
@@ -430,6 +431,10 @@ class LogFileTests(unittest.TestCase):
         self.assertEqual(
             spec.render_matplotlib["style"]["track_header"]["background_color"],
             "#ffffff",
+        )
+        self.assertEqual(
+            spec.render_matplotlib["style"]["report"]["summary_band_color"],
+            "#123456",
         )
 
     def test_reference_track_config_controls_layout_axis(self) -> None:
@@ -1195,6 +1200,59 @@ class LogFileTests(unittest.TestCase):
         self.assertEqual(spec.render_dpi, 350)
         self.assertEqual(spec.document["bindings"]["channels"][0]["channel"], "GR")
         self.assertEqual(spec.document["bindings"]["channels"][0]["track_id"], "combo")
+
+    def test_layout_heading_builds_shared_report_block_and_tail_toggle(self) -> None:
+        mapping = build_mapping()
+        mapping["document"]["layout"]["heading"] = {
+            "enabled": True,
+            "provider_name": "Company",
+            "general_fields": [
+                {"key": "company", "label": "Company", "value": "University of Utah"},
+                {"key": "well", "label": "Well", "source_key": "WELL"},
+                {"key": "field", "label": "Field", "value": "None"},
+            ],
+            "service_titles": ["Cement Bond Log", "Variable Density Log"],
+            "detail": {
+                "kind": "open_hole",
+                "rows": [
+                    {
+                        "label_cells": ["Run", "Down"],
+                        "columns": [
+                            {"cells": ["06-Oct-2021"]},
+                            {
+                                "cells": [
+                                    {
+                                        "value": "06-Oct-2021",
+                                        "background_color": "#fff46b",
+                                        "text_color": "#cc0000",
+                                    }
+                                ]
+                            },
+                        ],
+                    },
+                    {"label": "Bottom Log Interval", "values": ["8540 ft", "8540 ft"]},
+                ],
+            },
+        }
+        mapping["document"]["layout"]["tail"] = {"enabled": True}
+
+        spec = logfile_from_mapping(mapping)
+        document = build_document_for_logfile(
+            spec,
+            self.build_dataset(),
+            source_path=Path("job.las"),
+        )
+
+        self.assertIsNotNone(document.header.report)
+        assert document.header.report is not None
+        self.assertEqual(document.header.report.provider_name, "Company")
+        self.assertEqual(document.header.report.detail.kind.value, "open_hole")
+        self.assertEqual(len(document.header.report.detail.rows[0].label_cells), 2)
+        self.assertEqual(
+            document.header.report.detail.rows[0].columns[1].cells[0].text_color,
+            "#cc0000",
+        )
+        self.assertTrue(document.header.report.tail_enabled)
 
 
 if __name__ == "__main__":

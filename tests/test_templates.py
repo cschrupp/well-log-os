@@ -148,6 +148,68 @@ class TemplateTests(unittest.TestCase):
         self.assertAlmostEqual(element.callouts[0].distance_from_bottom or 0.0, 2.5)
         self.assertAlmostEqual(element.callouts[0].every or 0.0, 5.0)
 
+    def test_document_can_parse_report_block(self) -> None:
+        document = document_from_mapping(
+            {
+                "name": "report block",
+                "page": {"size": "A4"},
+                "depth": {"unit": "m", "scale": "1:200"},
+                "header": {
+                    "report": {
+                        "provider_name": "Company",
+                        "general_fields": [
+                            {"key": "company", "label": "Company", "value": "University of Utah"},
+                            {"key": "well", "label": "Well", "source_key": "WELL"},
+                        ],
+                        "service_titles": ["Cement Bond Log", "Variable Density Log"],
+                        "detail": {
+                            "kind": "cased_hole",
+                            "column_titles": ["Measured", "Recorded"],
+                            "rows": [
+                                {
+                                    "label_cells": ["Run", "Down"],
+                                    "columns": [
+                                        {"cells": ["06-Oct-2021"]},
+                                        {
+                                            "cells": [
+                                                {
+                                                    "value": "06-Oct-2021",
+                                                    "background_color": "#fff46b",
+                                                    "text_color": "#cc0000",
+                                                    "font_weight": "bold",
+                                                }
+                                            ]
+                                        },
+                                    ],
+                                },
+                                {"label": "Bottom Log Interval", "values": ["8540 ft", "8540 ft"]},
+                            ],
+                        },
+                        "tail_enabled": True,
+                    }
+                },
+                "tracks": [
+                    {
+                        "id": "depth",
+                        "title": "Depth",
+                        "kind": "reference",
+                        "width_mm": 16,
+                        "reference": {"define_layout": True, "unit": "m", "scale_ratio": 200},
+                    }
+                ],
+            }
+        )
+        self.assertIsNotNone(document.header.report)
+        assert document.header.report is not None
+        self.assertEqual(document.header.report.provider_name, "Company")
+        self.assertEqual(document.header.report.detail.kind.value, "cased_hole")
+        self.assertEqual(len(document.header.report.detail.rows[0].label_cells), 2)
+        self.assertEqual(
+            document.header.report.detail.rows[0].columns[1].cells[0].background_color,
+            "#fff46b",
+        )
+        self.assertTrue(document.header.report.tail_enabled)
+
     def test_curve_element_can_enable_log_wrap(self) -> None:
         document = document_from_mapping(
             {
