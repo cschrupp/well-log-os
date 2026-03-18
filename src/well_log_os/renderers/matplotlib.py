@@ -44,6 +44,7 @@ from ..model import (
     ReportBlockSpec,
     ReportDetailCellSpec,
     ReportDetailSpec,
+    ReportServiceTitleSpec,
     ReportValueSpec,
     ScalarChannel,
     ScaleKind,
@@ -906,13 +907,166 @@ class MatplotlibRenderer(Renderer):
         self,
         report: ReportBlockSpec,
         dataset: WellDataset,
-    ) -> list[str]:
-        titles: list[str] = []
+    ) -> list[tuple[ReportServiceTitleSpec, str]]:
+        titles: list[tuple[ReportServiceTitleSpec, str]] = []
         for item in report.service_titles:
-            value = self._resolve_report_value(item, dataset).strip()
+            value = self._resolve_report_value(item.value, dataset).strip()
             if value:
-                titles.append(value)
+                titles.append((item, value))
         return titles
+
+    def _measure_report_text_bbox(
+        self,
+        ax,
+        *,
+        renderer,
+        text: str,
+        text_x: float,
+        text_y: float,
+        transform,
+        fontsize: float,
+        fontweight: str,
+        fontstyle: str,
+        horizontal_alignment: str,
+        vertical_alignment: str,
+        rotation: float,
+    ):
+        artist = ax.text(
+            text_x,
+            text_y,
+            text,
+            transform=transform,
+            fontsize=fontsize,
+            fontweight=fontweight,
+            fontstyle=fontstyle,
+            ha=horizontal_alignment,
+            va=vertical_alignment,
+            rotation=rotation,
+            rotation_mode="anchor",
+            alpha=0.0,
+        )
+        try:
+            return artist.get_window_extent(renderer=renderer)
+        finally:
+            artist.remove()
+
+    def _fit_report_text_fontsize(
+        self,
+        ax,
+        *,
+        text: str,
+        text_x: float,
+        text_y: float,
+        transform,
+        base_fontsize: float,
+        available_width_ratio: float,
+        available_height_ratio: float,
+        fontweight: str,
+        fontstyle: str,
+        horizontal_alignment: str,
+        vertical_alignment: str,
+        rotation: float,
+        auto_adjust: bool,
+        min_fontsize: float = 5.0,
+    ) -> float:
+        if not text:
+            return base_fontsize
+        if not auto_adjust:
+            return base_fontsize
+
+        renderer = self._curve_callout_renderer(ax)
+        axes_bbox = ax.get_window_extent(renderer=renderer)
+        max_width_px = max(float(axes_bbox.width) * max(available_width_ratio, 0.01), 1.0)
+        max_height_px = max(float(axes_bbox.height) * max(available_height_ratio, 0.01), 1.0)
+        normalized_rotation = abs(float(rotation)) % 180.0
+        if np.isclose(normalized_rotation, 90.0):
+            max_width_px, max_height_px = max_height_px, max_width_px
+        fontsize = float(base_fontsize)
+        lower_bound = min(float(min_fontsize), fontsize)
+        while fontsize > lower_bound + 1e-6:
+            bbox = self._measure_report_text_bbox(
+                ax,
+                renderer=renderer,
+                text=text,
+                text_x=text_x,
+                text_y=text_y,
+                transform=transform,
+                fontsize=fontsize,
+                fontweight=fontweight,
+                fontstyle=fontstyle,
+                horizontal_alignment=horizontal_alignment,
+                vertical_alignment=vertical_alignment,
+                rotation=rotation,
+            )
+            if bbox.width <= max_width_px and bbox.height <= max_height_px:
+                return fontsize
+            fontsize = max(lower_bound, fontsize - 0.5)
+        return fontsize
+
+    def _draw_report_service_title_lines(
+        self,
+        ax,
+        titles: list[tuple[ReportServiceTitleSpec, str]],
+        *,
+        box: tuple[float, float, float, float],
+        row_step: float,
+        start_y: float,
+        fallback_fontsize: float,
+        transform,
+        text_rotation: float,
+    ) -> None:
+        if not titles:
+            return
+
+        text_kwargs: dict[str, Any] = {"transform": transform}
+        if text_rotation:
+            text_kwargs["rotation"] = text_rotation
+            text_kwargs["rotation_mode"] = "anchor"
+        padding = min(0.02, 0.18 * box[2])
+        available_width_ratio = max(box[2] - 2.0 * padding, 0.01)
+        available_height_ratio = max(min(row_step * 0.82, box[3]), 0.03)
+        for index, (title_spec, title) in enumerate(titles):
+            alignment = title_spec.alignment
+            if alignment == "center":
+                text_x = box[0] + 0.5 * box[2]
+            elif alignment == "right":
+                text_x = box[0] + box[2] - padding
+            else:
+                text_x = box[0] + padding
+            text_y = start_y - index * max(row_step, 0.055)
+            base_fontsize = float(
+                title_spec.font_size if title_spec.font_size is not None else fallback_fontsize
+            )
+            fontweight = "bold" if title_spec.bold else "normal"
+            fontstyle = "italic" if title_spec.italic else "normal"
+            fontsize = self._fit_report_text_fontsize(
+                ax,
+                text=title,
+                text_x=text_x,
+                text_y=text_y,
+                transform=transform,
+                base_fontsize=base_fontsize,
+                available_width_ratio=available_width_ratio,
+                available_height_ratio=available_height_ratio,
+                fontweight=fontweight,
+                fontstyle=fontstyle,
+                horizontal_alignment=alignment,
+                vertical_alignment="top",
+                rotation=text_rotation,
+                auto_adjust=title_spec.auto_adjust,
+            )
+            ax.text(
+                text_x,
+                text_y,
+                title,
+                ha=alignment,
+                va="top",
+                fontsize=fontsize,
+                fontweight=fontweight,
+                fontstyle=fontstyle,
+                color="#111111",
+                **text_kwargs,
+            )
 
     def _report_field_map(
         self,
@@ -1111,20 +1265,18 @@ class MatplotlibRenderer(Renderer):
 
         service_titles = self._report_service_titles(report, dataset)
         if service_titles:
-            title_x = titles_box[0] + 0.02
             start_y = titles_box[1] + titles_box[3] - 0.08 * titles_box[3]
             step = min(0.12 * titles_box[3], 0.28 * titles_box[3] / max(len(service_titles), 1))
-            for index, title in enumerate(service_titles):
-                ax.text(
-                    title_x,
-                    start_y - index * max(step, 0.055),
-                    title,
-                    ha="left",
-                    va="top",
-                    fontsize=float(report_style["service_fontsize"]),
-                    color="#111111",
-                    **text_kwargs,
-                )
+            self._draw_report_service_title_lines(
+                ax,
+                service_titles,
+                box=titles_box,
+                row_step=max(step, 0.055),
+                start_y=start_y,
+                fallback_fontsize=float(report_style["service_fontsize"]),
+                transform=transform,
+                text_rotation=text_rotation,
+            )
 
         draw_subrows(
             *archive_box,
@@ -1537,17 +1689,18 @@ class MatplotlibRenderer(Renderer):
         if service_titles:
             start_y = services_box[1] + services_box[3] - 0.38 * services_box[3]
             step = min(0.23 * services_box[3], 0.58 * services_box[3] / max(len(service_titles), 1))
-            for index, title in enumerate(service_titles):
-                ax.text(
-                    services_box[0] + 0.012,
-                    start_y - index * max(step, 0.055),
-                    title,
-                    ha="left",
-                    va="top",
-                    fontsize=float(report_style["service_fontsize"]),
-                    color="#111111",
-                    **text_kwargs,
-                )
+            self._draw_report_service_title_lines(
+                ax,
+                service_titles,
+                box=services_box,
+                row_step=max(step, 0.055),
+                start_y=start_y,
+                fallback_fontsize=float(
+                    report_style.get("tail_service_fontsize", report_style["service_fontsize"])
+                ),
+                transform=transform,
+                text_rotation=text_rotation,
+            )
 
         ax.text(
             scale_box[0] + 0.012,
@@ -1667,34 +1820,29 @@ class MatplotlibRenderer(Renderer):
         if compact:
             start_y = 0.33
             step = min(0.12, 0.26 / max(len(titles), 1))
-            fontsize = float(report_style["tail_service_fontsize"])
-            x = 0.02
-            for index, title in enumerate(titles):
-                ax.text(
-                    x,
-                    start_y - index * step,
-                    title,
-                    ha="left",
-                    va="top",
-                    fontsize=fontsize,
-                    color="#111111",
-                    **text_kwargs,
-                )
+            self._draw_report_service_title_lines(
+                ax,
+                titles,
+                box=(0.0, 0.0, 1.0, 1.0),
+                row_step=max(step, 0.055),
+                start_y=start_y,
+                fallback_fontsize=float(report_style["tail_service_fontsize"]),
+                transform=transform,
+                text_rotation=text_rotation,
+            )
             return
-        x = 0.12
         start_y = 0.56
         step = min(0.04, 0.10 / max(len(titles), 1))
-        for index, title in enumerate(titles):
-            ax.text(
-                x,
-                start_y - index * step,
-                title,
-                ha="left",
-                va="top",
-                fontsize=float(report_style["service_fontsize"]),
-                color="#111111",
-                **text_kwargs,
-            )
+        self._draw_report_service_title_lines(
+            ax,
+            titles,
+            box=(0.10, 0.0, 0.88, 1.0),
+            row_step=max(step, 0.04),
+            start_y=start_y,
+            fallback_fontsize=float(report_style["service_fontsize"]),
+            transform=transform,
+            text_rotation=text_rotation,
+        )
 
     def _draw_report_detail_table(
         self,

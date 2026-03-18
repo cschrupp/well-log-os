@@ -53,6 +53,7 @@ from .model import (
     ReportDetailRowSpec,
     ReportDetailSpec,
     ReportFieldSpec,
+    ReportServiceTitleSpec,
     ReportValueSpec,
     ScaleKind,
     ScaleSpec,
@@ -911,6 +912,37 @@ def _build_report_detail_cell(data: Any, *, context: str) -> ReportDetailCellSpe
         raise TemplateValidationError(f"Invalid {context} configuration.") from exc
 
 
+def _build_report_service_title(data: Any, *, context: str) -> ReportServiceTitleSpec:
+    value = _build_report_value(data, context=context)
+    font_size: float | None = None
+    auto_adjust = True
+    bold = False
+    italic = False
+    alignment = "left"
+    if isinstance(data, Mapping):
+        if data.get("font_size") is not None:
+            font_size = float(data["font_size"])
+        if data.get("auto_adjust") is not None:
+            auto_adjust = bool(data["auto_adjust"])
+        if data.get("bold") is not None:
+            bold = bool(data["bold"])
+        if data.get("italic") is not None:
+            italic = bool(data["italic"])
+        if data.get("alignment") is not None:
+            alignment = str(data["alignment"])
+    try:
+        return ReportServiceTitleSpec(
+            value=value,
+            font_size=font_size,
+            auto_adjust=auto_adjust,
+            bold=bold,
+            italic=italic,
+            alignment=alignment,
+        )
+    except (TypeError, ValueError) as exc:
+        raise TemplateValidationError(f"Invalid {context} configuration.") from exc
+
+
 def _build_report_block(data: Any) -> ReportBlockSpec | None:
     if data is None:
         return None
@@ -947,7 +979,7 @@ def _build_report_block(data: Any) -> ReportBlockSpec | None:
             ) from exc
 
     service_titles = tuple(
-        _build_report_value(
+        _build_report_service_title(
             item,
             context=f"header.report.service_titles[{index}]",
         )

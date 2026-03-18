@@ -2030,7 +2030,21 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
                                 "value": "06-Oct-2021",
                             },
                         ],
-                        "service_titles": ["Cement Bond Log", "Variable Density Log"],
+                        "service_titles": [
+                            {
+                                "value": "Cement Bond Log",
+                                "font_size": 16.0,
+                                "bold": True,
+                                "alignment": "center",
+                            },
+                            {
+                                "value": "Variable Density Log",
+                                "font_size": 15.0,
+                                "italic": True,
+                                "alignment": "right",
+                                "auto_adjust": True,
+                            },
+                        ],
                         "detail": {
                             "kind": "cased_hole",
                             "column_titles": ["Measured", "Recorded"],
@@ -2075,13 +2089,36 @@ class MatplotlibStyleDefaultsTests(unittest.TestCase):
             tail_bounds = result.artifact[-1].axes[0].get_position().bounds
             heading_texts = [text.get_text() for ax in result.artifact[0].axes for text in ax.texts]
             tail_texts = [text.get_text() for ax in result.artifact[-1].axes for text in ax.texts]
+            heading_title_sizes = {
+                text.get_text(): text.get_fontsize()
+                for ax in result.artifact[0].axes
+                for text in ax.texts
+                if text.get_text() in {"Cement Bond Log", "Variable Density Log"}
+            }
+            tail_title_sizes = {
+                text.get_text(): text.get_fontsize()
+                for ax in result.artifact[-1].axes
+                for text in ax.texts
+                if text.get_text() in {"Cement Bond Log", "Variable Density Log"}
+            }
             self.assertAlmostEqual(heading_bounds[1], 0.5, places=3)
             self.assertAlmostEqual(heading_bounds[3], 0.5, places=3)
             self.assertAlmostEqual(tail_bounds[1], 0.0, places=3)
             self.assertAlmostEqual(tail_bounds[3], 0.22, places=3)
             self.assertTrue(any("University of Utah" in value for value in heading_texts))
+            self.assertTrue(any("Cement Bond Log" in value for value in heading_texts))
+            self.assertTrue(any("Variable Density Log" in value for value in tail_texts))
             self.assertTrue(any("Forge 78B-32" in value for value in tail_texts))
             self.assertTrue(any("m 1:200" in value for value in tail_texts))
+            self.assertIn("Cement Bond Log", heading_title_sizes)
+            self.assertIn("Cement Bond Log", tail_title_sizes)
+            self.assertLessEqual(
+                abs(
+                    heading_title_sizes["Cement Bond Log"]
+                    - tail_title_sizes["Cement Bond Log"]
+                ),
+                1.0,
+            )
         finally:
             for figure in result.artifact:
                 plt.close(figure)

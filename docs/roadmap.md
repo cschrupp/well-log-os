@@ -65,7 +65,8 @@ Decision history is tracked in `docs/decision-log.md`.
 Needed next to complete the intended workflow:
 
 - Render all `layout.log_sections` sequentially in one output artifact (implemented for matplotlib).
-- Add real renderer primitives for `heading`, `comments`, and `tail` sections.
+- Expand report composition beyond the existing `heading` and `tail` blocks by implementing
+  `layout.comments`.
 - Allow per-section depth windows and per-section page/layout settings.
 - Add section-aware bindings (`binding.section`) in rendering, not only schema/validation.
 - Add track-level default element properties to reduce binding repetition (style/scale/header display).
@@ -77,6 +78,7 @@ Needed next to complete the intended workflow:
 Compared against `workspace/renders/CBL_log_example.Pdf`, the current renderer is missing:
 
 - Cover/disclaimer/contents pages and report-style front matter.
+- Comments/notes blocks for the unused lower half of the first report page.
 - Parameter-table sections (channel processing, depth zone, tool control).
 - Advanced annotation packing for very dense tracks beyond the current dedicated-label-lane model.
 - Composite lane logic with custom legend/table blocks.

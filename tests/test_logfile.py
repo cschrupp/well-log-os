@@ -1211,7 +1211,19 @@ class LogFileTests(unittest.TestCase):
                 {"key": "well", "label": "Well", "source_key": "WELL"},
                 {"key": "field", "label": "Field", "value": "None"},
             ],
-            "service_titles": ["Cement Bond Log", "Variable Density Log"],
+            "service_titles": [
+                {
+                    "value": "Cement Bond Log",
+                    "font_size": 14.0,
+                    "bold": True,
+                    "alignment": "center",
+                },
+                {
+                    "value": "Variable Density Log",
+                    "italic": True,
+                    "alignment": "right",
+                },
+            ],
             "detail": {
                 "kind": "open_hole",
                 "rows": [
@@ -1246,6 +1258,11 @@ class LogFileTests(unittest.TestCase):
         self.assertIsNotNone(document.header.report)
         assert document.header.report is not None
         self.assertEqual(document.header.report.provider_name, "Company")
+        self.assertAlmostEqual(document.header.report.service_titles[0].font_size or 0.0, 14.0)
+        self.assertTrue(document.header.report.service_titles[0].bold)
+        self.assertEqual(document.header.report.service_titles[0].alignment, "center")
+        self.assertTrue(document.header.report.service_titles[1].italic)
+        self.assertEqual(document.header.report.service_titles[1].alignment, "right")
         self.assertEqual(document.header.report.detail.kind.value, "open_hole")
         self.assertEqual(len(document.header.report.detail.rows[0].label_cells), 2)
         self.assertEqual(

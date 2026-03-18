@@ -191,6 +191,29 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 },
             ]
         },
+        "reportServiceTitle": {
+            "anyOf": [
+                {"type": "string"},
+                {"type": "number"},
+                {
+                    "type": "object",
+                    "properties": {
+                        "value": {"type": ["string", "number"]},
+                        "source_key": {"type": "string", "minLength": 1},
+                        "default": {"type": ["string", "number"]},
+                        "font_size": {"type": "number", "exclusiveMinimum": 0},
+                        "auto_adjust": {"type": "boolean"},
+                        "bold": {"type": "boolean"},
+                        "italic": {"type": "boolean"},
+                        "alignment": {
+                            "type": "string",
+                            "enum": ["left", "center", "right"],
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+            ]
+        },
         "reportField": {
             "type": "object",
             "required": ["key", "label"],
@@ -296,7 +319,7 @@ LOGFILE_JSON_SCHEMA: dict[str, Any] = {
                 },
                 "service_titles": {
                     "type": "array",
-                    "items": {"$ref": "#/$defs/reportValue"},
+                    "items": {"$ref": "#/$defs/reportServiceTitle"},
                 },
                 "detail": {"$ref": "#/$defs/reportDetail"},
                 "tail_enabled": {"type": "boolean"},

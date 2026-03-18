@@ -1074,6 +1074,30 @@ class ReportFieldSpec:
 
 
 @dataclass(slots=True)
+class ReportServiceTitleSpec:
+    value: ReportValueSpec = field(default_factory=ReportValueSpec)
+    font_size: float | None = None
+    auto_adjust: bool = True
+    bold: bool = False
+    italic: bool = False
+    alignment: str = "left"
+
+    def __post_init__(self) -> None:
+        if self.font_size is not None and self.font_size <= 0:
+            raise ValueError("Report service title font_size must be positive when provided.")
+        if not isinstance(self.auto_adjust, bool):
+            raise ValueError("Report service title auto_adjust must be boolean.")
+        if not isinstance(self.bold, bool):
+            raise ValueError("Report service title bold must be boolean.")
+        if not isinstance(self.italic, bool):
+            raise ValueError("Report service title italic must be boolean.")
+        normalized_alignment = str(self.alignment).strip().lower()
+        if normalized_alignment not in {"left", "center", "right"}:
+            raise ValueError("Report service title alignment must be left, center, or right.")
+        self.alignment = normalized_alignment
+
+
+@dataclass(slots=True)
 class ReportDetailCellSpec:
     value: ReportValueSpec = field(default_factory=ReportValueSpec)
     background_color: str | None = None
@@ -1164,7 +1188,7 @@ class ReportBlockSpec:
     enabled: bool = True
     provider_name: str | None = None
     general_fields: tuple[ReportFieldSpec, ...] = ()
-    service_titles: tuple[ReportValueSpec, ...] = ()
+    service_titles: tuple[ReportServiceTitleSpec, ...] = ()
     detail: ReportDetailSpec | None = None
     tail_enabled: bool = False
 

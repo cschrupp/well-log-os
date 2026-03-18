@@ -194,6 +194,16 @@ Behavior:
   - `document.layout.comments`
   - `document.layout.log_sections`
   - `document.layout.tail`
+- Report heading and tail blocks are rendered from the shared report object:
+  - `heading` renders the full cover/detail block
+  - `tail` reuses the same data in a compact summary block
+- `header.report.service_titles` accepts either plain strings or styled objects:
+  - `value`
+  - `font_size`
+  - `auto_adjust`
+  - `bold`
+  - `italic`
+  - `alignment: left | center | right`
 - Template YAML files can be partial; the merged savefile result is what gets validated and rendered.
 - Page spacing is YAML-configurable:
   - `document.page.margin_left_mm` (default: `0`)
@@ -236,6 +246,88 @@ document:
           stride: 6
           amplitude_scale: 0.28
           line_width: 0.16
+```
+
+Example report service titles with explicit formatting:
+
+```yaml
+document:
+  layout:
+    heading:
+      provider_name: Company
+      service_titles:
+        - value: Cement Bond Log
+          font_size: 16
+          auto_adjust: true
+          bold: true
+          alignment: left
+        - value: Variable Density Log
+          font_size: 15
+          auto_adjust: true
+          italic: true
+          alignment: center
+        - value: Gamma Ray - CCL
+          font_size: 14
+          auto_adjust: true
+          alignment: right
+```
+
+Report page authoring rules:
+
+- `document.layout.heading` and `document.layout.tail` share the same report object.
+- `heading` renders the full cover/detail block.
+- `tail` is only a toggle (`document.layout.tail.enabled`) and reuses the same report data in a
+  compact summary block.
+- The full heading selects exactly one detail table:
+  - `detail.kind: open_hole`
+  - `detail.kind: cased_hole`
+- Detail rows are fixed-row tables. Missing values stay empty; rows do not collapse.
+- Use `label_cells` when the left label column must be split.
+- Use `columns[].cells` when a value column must be split into subcells.
+
+Example report block:
+
+```yaml
+document:
+  layout:
+    heading:
+      enabled: true
+      provider_name: Company
+      general_fields:
+        - key: company
+          label: Company
+          value: University of Utah
+        - key: well
+          label: Well
+          value: Forge 78B-32
+        - key: scale
+          label: Scale
+          value: ft 1:240
+      service_titles:
+        - value: Cement Bond Log
+          font_size: 16
+          auto_adjust: true
+          bold: true
+          alignment: left
+      detail:
+        kind: open_hole
+        rows:
+          - label_cells:
+              - Density
+              - Viscosity
+            columns:
+              - cells:
+                  - G/L
+                  - S
+              - cells:
+                  - G/L
+                  - S
+          - label: Logged Depth
+            values:
+              - ""
+              - ""
+    tail:
+      enabled: true
 ```
 
 Example instance-targeted fill between two rendered copies of the same channel:

@@ -59,6 +59,13 @@ In layout/bindings mode, section placeholders are available:
 
 Each section is rendered in sequence into the same output artifact (matplotlib backend).
 
+Current report-section behavior:
+
+- `heading` is implemented as a portrait first page with rotated cover/detail content in the top
+  half of the page.
+- `tail` is implemented as a compact summary block driven by the same shared report object.
+- `comments` still exists in YAML as the next report-composition target, but is not rendered yet.
+
 ## 3) Matplotlib Style Sections
 
 `render.matplotlib.style` supports these top-level sections:
@@ -93,35 +100,119 @@ Curve-callout placement defaults live under `render.matplotlib.style.curve_callo
 - `default_depth_offset_steps`
 - `top_distance_steps`, `bottom_distance_steps`
 - `min_vertical_gap_steps`
-- `font_size`, `font_weight`, `font_style`
-- `arrow_style`, `arrow_linewidth`
+
+## 4) Report Blocks
+
+`header.report` / `layout.heading` / `layout.tail` share the same report data model.
+
+Implemented report capabilities:
+
+- general key/value fields
+- service titles
+- open-hole / cased-hole detail tables
+- fixed tail summary subset
+
+Report-structure rules:
+
+- The first page remains portrait.
+- The full heading content is rotated inside the top half of that page.
+- `tail` is not a second data model. It is a compact view of the same report data.
+- The full heading chooses exactly one detail table:
+  - `detail.kind: open_hole`
+  - `detail.kind: cased_hole`
+- Detail tables are fixed-row structures; empty cells remain empty and do not collapse.
+- Rows align across the left label area and the `1..4` parallel value columns.
+- `document.layout.tail.enabled: true` turns on the compact summary page/block.
+
+`service_titles` accepts either a plain string or a styled object with:
+
+- `value`
+- `font_size`
+- `auto_adjust`
+- `bold`
+- `italic`
+- `alignment: left | center | right`
+
+These formatting options are honored in both the full heading and the tail summary, so report
+titles do not need separate heading-vs-tail overrides.
+
+Detail-table authoring:
+
+- `label_cells`: split the left label column for a row
+- `values`: shorthand for unsplit value cells
+- `columns[].cells`: split an individual value column into subcells
+- `divider_left_visible` / `divider_right_visible`: keep the split but hide a sub-divider when
+  a separator like `@` should not look boxed in
 
 Example:
 
 ```yaml
-render:
-  backend: matplotlib
-  output_path: ../workspace/renders/job.pdf
-  dpi: 300
-  matplotlib:
-    style:
-      track_header:
-        background_color: "#efefef"
-        separator_linewidth: 0.4
-      track:
-        x_tick_labelsize: 7.5
-      grid:
-        depth_major_linewidth: 0.8
+document:
+  layout:
+    heading:
+      provider_name: Company
+      general_fields:
+        - key: company
+          label: Company
+          value: University of Utah
+        - key: scale
+          label: Scale
+          value: ft 1:240
+      service_titles:
+        - value: Cement Bond Log
+          font_size: 16
+          auto_adjust: true
+          bold: true
+          alignment: left
+        - value: Variable Density Log
+          font_size: 15
+          auto_adjust: true
+          italic: true
+          alignment: center
+      detail:
+        kind: open_hole
+        rows:
+          - label_cells:
+              - Density
+              - Viscosity
+            columns:
+              - cells:
+                  - G/L
+                  - S
+              - cells:
+                  - G/L
+                  - S
+          - label: RM @ Measured Temp
+            columns:
+              - cells:
+                  - OHMM
+                  - value: "@"
+                    divider_left_visible: false
+                    divider_right_visible: false
+                  - 75.0 C
+              - cells:
+                  - OHMM
+                  - value: "@"
+                    divider_left_visible: false
+                    divider_right_visible: false
+                  - C
+    tail:
+      enabled: true
 ```
 
-## 4) Why Defaults Are in YAML
+Reference examples:
+
+- `examples/cbl_report_pages.log.yaml`
+- `examples/cbl_report_pages_open_hole.log.yaml`
+
+## 5) Why Defaults Are in YAML
 
 Benefits:
 - no large hardcoded style blocks inside renderer code
 - easier to tune visual defaults without touching logic
 - consistent base style for UI/template generation later
 
-## 5) Current Boundaries
+## 6) Current Boundaries
 
 - This configuration controls visual/layout styling.
 - Some backend internals remain code-level (for example Matplotlib PDF rc settings).
@@ -129,7 +220,7 @@ Benefits:
   - array tracks accept raster + scalar overlays
   - normal and reference tracks do not accept raster elements
 
-## 6) Page Spacing Controls
+## 7) Page Spacing Controls
 
 Track placement spacing is controlled by page config, not renderer hardcoding:
 
@@ -141,7 +232,7 @@ Defaults are:
 - `margin_left_mm: 0`
 - `track_gap_mm: 0`
 
-## 7) Track Types
+## 8) Track Types
 
 The document model supports these track types:
 

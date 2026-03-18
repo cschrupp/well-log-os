@@ -1,6 +1,6 @@
 # well_log_os Decision Log
 
-Last updated: 2026-03-15
+Last updated: 2026-03-18
 
 ## Purpose
 
@@ -56,6 +56,14 @@ This file records project decisions that should remain stable unless explicitly 
   instead of channel bindings.
 - Annotation-track annotations may occupy normalized sub-lanes inside the track through
   `lane_start` / `lane_end`.
+- Report heading and tail share one report object:
+  - `heading` is the full cover/detail page
+  - `tail` is a compact summary view of the same data
+  - `tail` is enabled by layout toggle, not by duplicating another report model
+- Report detail tables are fixed-row, fixed-column structures:
+  - one selected detail kind per report (`open_hole` or `cased_hole`)
+  - empty cells stay empty and rows do not collapse
+  - row-local splits are expressed with `label_cells` and `columns[].cells`
 
 ## Rendering Decisions
 
@@ -87,6 +95,13 @@ This file records project decisions that should remain stable unless explicitly 
 - Dense annotation tracks may reserve dedicated event-label sub-lanes through
   `label_mode: dedicated_lane` plus `label_lane_start` / `label_lane_end` instead of relying only
   on free-placement heuristics.
+- Report service titles are first-class styled objects, not renderer-only strings:
+  - `font_size`
+  - `auto_adjust`
+  - `bold`
+  - `italic`
+  - `alignment`
+  - the same title formatting applies to both the heading and the tail
 
 ## Tooling and Process Decisions
 

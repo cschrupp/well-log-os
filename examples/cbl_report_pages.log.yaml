@@ -70,9 +70,20 @@ document:
           label: Casing Fluid Type
           value: Water
       service_titles:
-        - Cement Bond Log
-        - Variable Density Log
-        - Gamma Ray - CCL
+        - value: Cement Bond Log
+          font_size: 16
+          auto_adjust: true
+          bold: true
+          alignment: left
+        - value: Variable Density Log
+          font_size: 15
+          auto_adjust: true
+          italic: true
+          alignment: center
+        - value: Gamma Ray - CCL
+          font_size: 14
+          auto_adjust: true
+          alignment: right
       detail:
         kind: cased_hole
         title: Cased Hole

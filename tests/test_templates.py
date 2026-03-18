@@ -161,7 +161,20 @@ class TemplateTests(unittest.TestCase):
                             {"key": "company", "label": "Company", "value": "University of Utah"},
                             {"key": "well", "label": "Well", "source_key": "WELL"},
                         ],
-                        "service_titles": ["Cement Bond Log", "Variable Density Log"],
+                        "service_titles": [
+                            {
+                                "value": "Cement Bond Log",
+                                "font_size": 15.0,
+                                "auto_adjust": True,
+                                "bold": True,
+                                "alignment": "center",
+                            },
+                            {
+                                "value": "Variable Density Log",
+                                "italic": True,
+                                "alignment": "right",
+                            },
+                        ],
                         "detail": {
                             "kind": "cased_hole",
                             "column_titles": ["Measured", "Recorded"],
@@ -202,6 +215,12 @@ class TemplateTests(unittest.TestCase):
         self.assertIsNotNone(document.header.report)
         assert document.header.report is not None
         self.assertEqual(document.header.report.provider_name, "Company")
+        self.assertEqual(document.header.report.service_titles[0].value.value, "Cement Bond Log")
+        self.assertAlmostEqual(document.header.report.service_titles[0].font_size or 0.0, 15.0)
+        self.assertTrue(document.header.report.service_titles[0].bold)
+        self.assertEqual(document.header.report.service_titles[0].alignment, "center")
+        self.assertTrue(document.header.report.service_titles[1].italic)
+        self.assertEqual(document.header.report.service_titles[1].alignment, "right")
         self.assertEqual(document.header.report.detail.kind.value, "cased_hole")
         self.assertEqual(len(document.header.report.detail.rows[0].label_cells), 2)
         self.assertEqual(
